@@ -112,7 +112,7 @@ docker-compose up -d
 ### 5. 启动后端
 
 ```bash
-uv run python backend/app.py
+uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### 6.启动前端
