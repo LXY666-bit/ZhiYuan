@@ -1,0 +1,27 @@
+# 环境变量 — 包含 API 密钥，绝对不能提交
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docker 持久化数据
+volumes/
+
+# 上传的文档和运行时数据
+data/documents/
+data/bm25_state.json
+
+# OS
+.DS_Store
+Thumbs.db
