@@ -713,6 +713,7 @@ createApp({
                 PDF: 'ph ph-file-pdf',
                 Word: 'ph ph-file-doc',
                 Excel: 'ph ph-file-xls',
+                Text: 'ph ph-file-text',
             };
             return map[fileType] || 'ph ph-file';
         },

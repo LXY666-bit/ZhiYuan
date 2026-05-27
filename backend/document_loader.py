@@ -2,7 +2,7 @@
 import os
 from typing import Dict, List
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, UnstructuredExcelLoader
+from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, UnstructuredExcelLoader
 
 
 class DocumentLoader:
@@ -135,6 +135,16 @@ class DocumentLoader:
         elif file_lower.endswith((".xlsx", ".xls")):
             doc_type = "Excel"
             loader = UnstructuredExcelLoader(file_path)
+        elif file_lower.endswith(".txt"):
+            doc_type = "Text"
+            # 尝试 UTF-8，失败则用 GBK（Windows 中文 TXT 常见编码）
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    f.read()
+                encoding = "utf-8"
+            except UnicodeDecodeError:
+                encoding = "gbk"
+            loader = TextLoader(file_path, encoding=encoding)
         else:
             raise ValueError(f"不支持的文件类型: {filename}")
 
@@ -170,7 +180,7 @@ class DocumentLoader:
 
         for filename in os.listdir(folder_path):
             file_lower = filename.lower()
-            if not (file_lower.endswith(".pdf") or file_lower.endswith((".docx", ".doc")) or file_lower.endswith((".xlsx", ".xls"))):
+            if not (file_lower.endswith(".pdf") or file_lower.endswith((".docx", ".doc")) or file_lower.endswith((".xlsx", ".xls")) or file_lower.endswith(".txt")):
                 continue
 
             file_path = os.path.join(folder_path, filename)

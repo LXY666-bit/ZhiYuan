@@ -15,12 +15,14 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
 </head>
 <body>
-    <!-- 玻璃拟态背景光晕 -->
-    <div class="bg-orbs">
-        <div class="bg-orb"></div>
-        <div class="bg-orb"></div>
-        <div class="bg-orb"></div>
-        <div class="bg-orb"></div>
+    <!-- 渐变背景 + 浮动几何图形 -->
+    <div class="bg-geo">
+        <div class="geo-shape circle"></div>
+        <div class="geo-shape triangle"></div>
+        <div class="geo-shape square"></div>
+        <div class="geo-shape hexagon"></div>
+        <div class="geo-shape circle"></div>
+        <div class="geo-shape square"></div>
     </div>
     <div id="app" class="app-shell">
 
@@ -141,7 +143,7 @@
                     </div>
                     <div class="panel-body">
                         <div class="upload-zone" @click="$refs.fileInput.click()" @dragover.prevent @drop.prevent="handleFileDrop">
-                            <input type="file" ref="fileInput" @change="handleFileSelect" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple hidden />
+                            <input type="file" ref="fileInput" @change="handleFileSelect" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt" multiple hidden />
                             <i class="ph ph-file-plus upload-zone-icon"></i>
                             <p v-if="!selectedFile">拖拽文档到此处，或<span class="accent-link">点击选择</span></p>
                             <div v-else class="selected-file-bar">
