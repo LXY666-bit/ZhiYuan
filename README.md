@@ -103,9 +103,11 @@ docker-compose up -d
 uv run python backend/app.py
 ```
 
+### 6.启动前端
+
 访问 **http://localhost:8000**
 
-### 6. 注册管理员
+### 7. 注册管理员
 
 1. 前端页面选择"注册"
 2. 角色选"管理员"
