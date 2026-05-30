@@ -191,7 +191,7 @@ def search_web(query: str) -> str:
     if not tavily_api_key:
         return "Web search is not configured (missing TAVILY_API_KEY)."
 
-    emit_rag_step("🌐", "正在调用联网搜索...", f"搜索: {query[:60]}")
+    emit_rag_step("🌐", "正在使用联网搜索🔍", f"搜索: {query[:60]}")
 
     try:
         from tavily import TavilyClient
