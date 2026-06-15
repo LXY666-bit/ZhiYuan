@@ -122,6 +122,34 @@ createApp({
             return div.innerHTML;
         },
 
+        // 将 RAG 步骤按 group 分组（复杂问题并行子Agent时使用）
+        groupRagSteps(steps) {
+            if (!steps || !steps.length) return { __ungrouped__: [] };
+            const groups = {};
+            let ungrouped = [];
+            let hasGroup = false;
+            for (const step of steps) {
+                if (step.group) {
+                    hasGroup = true;
+                    if (!groups[step.group]) groups[step.group] = [];
+                    groups[step.group].push(step);
+                } else {
+                    ungrouped.push(step);
+                }
+            }
+            if (!hasGroup) return { __ungrouped__: ungrouped };
+            groups.__ungrouped__ = ungrouped;
+            return groups;
+        },
+
+        // RAG 追溯阶段标签（v2.0 扩展）
+        traceStageLabel(trace) {
+            if (!trace) return '';
+            if (trace.retrieval_stage === 'synthesis') return '并行合成';
+            if (trace.retrieval_stage === 'expanded') return '已扩展';
+            return '初次检索';
+        },
+
         authHeaders(extra = {}) {
             const headers = { ...extra };
             if (this.token) headers.Authorization = `Bearer ${this.token}`;

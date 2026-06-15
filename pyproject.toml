@@ -32,7 +32,12 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "python-jose[cryptography]>=3.3.0",
     "tavily-python>=0.5.0",
+    "beautifulsoup4>=4.12.0",
 ]
+
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+default = true
 
 [project.optional-dependencies]
 study = [

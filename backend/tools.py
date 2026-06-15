@@ -17,6 +17,7 @@ _LAST_WEB_CONTEXT = None
 _KNOWLEDGE_TOOL_CALLS_THIS_TURN = 0
 _RAG_STEP_QUEUE = None  # asyncio.Queue, set by agent before streaming
 _RAG_STEP_LOOP = None   # asyncio loop, captured when setting queue
+_SUB_AGENT_GROUP = None  # 当前子 Agent 分组标识（用于并行子 Agent 的 RAG 步骤分组）
 
 
 def _set_last_rag_context(context: dict):
@@ -67,11 +68,25 @@ def set_rag_step_queue(queue):
         _RAG_STEP_LOOP = None
 
 
+def set_sub_agent_group(group_name: str):
+    """设置当前子 Agent 分组标识（并行子 Agent 检索时使用）。"""
+    global _SUB_AGENT_GROUP
+    _SUB_AGENT_GROUP = group_name
+
+
+def clear_sub_agent_group():
+    """清除子 Agent 分组标识。"""
+    global _SUB_AGENT_GROUP
+    _SUB_AGENT_GROUP = None
+
+
 def emit_rag_step(icon: str, label: str, detail: str = ""):
     """向队列发送一个 RAG 检索步骤。支持跨线程安全调用。"""
-    global _RAG_STEP_QUEUE, _RAG_STEP_LOOP
+    global _RAG_STEP_QUEUE, _RAG_STEP_LOOP, _SUB_AGENT_GROUP
     if _RAG_STEP_QUEUE is not None and _RAG_STEP_LOOP is not None:
         step = {"icon": icon, "label": label, "detail": detail}
+        if _SUB_AGENT_GROUP:
+            step["group"] = _SUB_AGENT_GROUP
         try:
             if not _RAG_STEP_LOOP.is_closed():
                 _RAG_STEP_LOOP.call_soon_threadsafe(_RAG_STEP_QUEUE.put_nowait, step)

@@ -8,7 +8,7 @@ from . import api as api_module
 from .database import init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = BASE_DIR / "frontend"
+FRONTEND_DIR = BASE_DIR / "frontend" / "dist"
 
 
 def create_app() -> FastAPI:
