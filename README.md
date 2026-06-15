@@ -19,9 +19,13 @@
 
 ## 截图展示
 
-| 登录页 | 对话页 | 知识库管理 | 用户管理 |
-|--------|--------|------------|----------|
-| ![登录](screenshots/login.png) | ![对话](screenshots/chat.png) | ![知识库](screenshots/admin.png) | ![用户](screenshots/users.png) |
+| 登录页 | 对话页 | 
+|--------|--------|
+| ![登录](screenshots/login.png) | ![对话](screenshots/chat.png) |
+
+| 知识库管理 | 用户管理 |
+| ------------|----------|
+| ![知识库](screenshots/admin.png) | ![用户](screenshots/users.png) |
 
 ## 架构概览
 
