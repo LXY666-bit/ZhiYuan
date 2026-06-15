@@ -19,13 +19,9 @@
 
 ## 截图展示
 
-| 登录页 | 对话页 |
-|--------|--------|
-| ![登录](screenshots/login.png) | ![对话](screenshots/chat.png) |
-
-| 知识库管理 | 用户管理 |
-|------------|----------|
-| ![知识库](screenshots/admin.png) | ![用户](screenshots/users.png) |
+| 登录页 | 对话页 | 知识库管理 | 用户管理 |
+|--------|--------|------------|----------|
+| ![登录](screenshots/login.png) | ![对话](screenshots/chat.png) | ![知识库](screenshots/admin.png) | ![用户](screenshots/users.png) |
 
 ## 架构概览
 
@@ -68,7 +64,7 @@
 | 关系数据库 | PostgreSQL 15 |
 | 缓存 | Redis 7 |
 | 重排序 | Jina Reranker v3 |
-| 前端 | Vue 3 + Phosphor Icons + marked + highlight.js |
+| 前端 | Vue 3 + TypeScript + Vite + Pinia + Phosphor Icons + marked + highlight.js |
 | 容器化 | Docker Compose |
 
 ## 快速开始
@@ -115,9 +111,17 @@ docker-compose up -d
 uv run uvicorn backend.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### 6.启动前端
+### 6. 启动前端
 
-访问 **http://localhost:8000**
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+前端开发服务器运行在 **http://localhost:3000**，API 请求自动代理到后端 8000 端口。
+
+> 生产环境可运行 `npm run build`，将静态文件输出到 `frontend/dist/`，由 Nginx 或 FastAPI 直接托管。
 
 ### 7. 注册管理员
 
@@ -149,9 +153,31 @@ ZhiYuan/
 │   ├── database.py         # SQLAlchemy 配置
 │   └── cache.py            # Redis 缓存
 ├── frontend/
-│   ├── index.html          # Vue 3 SPA
-│   ├── script.js           # 应用逻辑
-│   └── style.css           # 玻璃拟态设计系统
+│   ├── src/
+│   │   ├── main.ts               # Vue 3 入口
+│   │   ├── App.vue               # 根组件
+│   │   ├── components/
+│   │   │   ├── AuthPanel.vue     # 登录/注册面板
+│   │   │   ├── Sidebar.vue       # 侧边导航
+│   │   │   ├── Chat/             # 聊天相关组件
+│   │   │   │   ├── ChatArea.vue
+│   │   │   │   ├── ChatInput.vue
+│   │   │   │   ├── MessageItem.vue
+│   │   │   │   ├── MessageContent.vue
+│   │   │   │   ├── ThinkingTrace.vue
+│   │   │   │   ├── References.vue
+│   │   │   │   ├── WebSources.vue
+│   │   │   │   └── WelcomeScreen.vue
+│   │   │   ├── Documents/        # 文档管理组件
+│   │   │   ├── Users/            # 用户管理组件
+│   │   │   └── HistorySidebar.vue
+│   │   ├── stores/               # Pinia 状态管理
+│   │   ├── types/                # TypeScript 类型定义
+│   │   ├── utils/                # 工具函数 (API/Markdown)
+│   │   └── assets/styles/        # 全局样式
+│   ├── package.json              # 前端依赖
+│   ├── vite.config.ts            # Vite 配置 + API 代理
+│   └── tsconfig.json             # TypeScript 配置
 ├── docker-compose.yml      # PostgreSQL + Redis + Milvus + etcd + MinIO
 ├── pyproject.toml          # Python 依赖
 ├── .env.example            # 环境变量模板
