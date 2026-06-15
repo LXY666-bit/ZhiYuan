@@ -26,6 +26,3 @@ data/bm25_state.json
 .DS_Store
 Thumbs.db
 
-# 临时目录
-SuperMew-main/
-frontend/node_modules/
