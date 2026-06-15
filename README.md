@@ -1,21 +1,36 @@
 # 知渊 (ZhiYuan) — Agentic RAG 智能知识库
 
-基于 **Agentic RAG** 架构的智能知识库检索平台。上传文档后，通过混合检索（稠密向量 + 稀疏向量）与 LLM Agent 自动规划、检索、推理，精准回答你的问题。
+> **v2.0** — 自适应复杂度路由 + 并行子Agent RAG + 前端 TypeScript 化
+
+基于 **Agentic RAG** 架构的智能知识库检索平台。上传文档后，通过混合检索与 LLM Agent 自主分析问题复杂度、拆解子问题并行检索，精准回答你的问题。
 
 ## 功能特性
 
+### 核心 RAG（v2.0 新增）
+- **🧭 自适应复杂度路由** — LLM 自动判断问题复杂度：简单问题走标准检索，复杂问题自动拆解为子问题并行检索
+- **🔀 并行子Agent RAG** — 复杂问题分解为 2-4 个子问题，通过 LangGraph `Send` API 并行分发到独立子Agent，各自完成完整 RAG 流程后合成
+- **📊 检索流水线优化** — 召回 → Auto-Merge 父块 → Jina Rerank 重排序 → 阈值过滤，重排器看到完整上下文而非碎片
+- **🛡️ 强制 Step-Back 降级** — 检索为空时自动跳过评分，直接触发退步查询扩展，节省 LLM 调用
+- **🎯 RERANK_MIN_SCORE 阈值** — 可配置的最低相关性分数，自动过滤低质量文档
+- **🔧 候选池精细控制** — 支持 `RETRIEVAL_CANDIDATE_K` 显式指定检索候选数，便于调优
+
+### 基础能力
 - **多格式文档解析** — 支持 PDF、Word (.docx)、Excel (.xlsx)、TXT，自动检测编码
 - **三级滑动窗口分块** — L1(1200字) / L2(600字) / L3(300字) 层级分块，叶子向量化，父级自动合并
-- **混合检索** — 稠密向量 (BGE-M3) + 稀疏向量 (BM25)，RRF 融合排序
+- **混合检索** — 稠密向量 (BGE-M3) + 自实现 BM25 稀疏向量，RRF 融合排序
 - **智能重排序** — Jina Reranker v3 对候选结果二次精排
 - **Agent 自主规划** — LangChain Agent 驱动，自主选择检索策略、调用工具
 - **查询扩展** — 检索质量不足时自动触发退步问题 / HyDE / 复杂策略重写
 - **实时 Web 搜索** — 知识库无结果时自动联网补充（Tavily）
-- **流式对话** — SSE 实时推送，打字机效果 + RAG 检索过程可视化
-- **用户认证** — JWT 登录/注册，管理员 + 普通用户双角色
-- **文档管理** — 批量上传/删除，实时进度跟踪
+- **流式对话** — SSE 实时推送，打字机效果 + RAG 检索过程实时可视化（含子Agent分组）
+- **用户认证** — JWT 登录/注册，PBKDF2-SHA256 密码哈希，管理员 + 普通用户双角色
+- **文档管理** — 批量上传/删除，分步进度跟踪
 - **用户管理** — 管理员可查看/删除用户、切换角色
-- **暗色主题** — 渐变背景 + 浮动几何图形 + 玻璃拟态卡片 UI
+
+### 前端
+- **TypeScript 工程化** — Vite 5 + Vue 3 Composition API + Pinia 状态管理，29 个模块化组件
+- **暗色玻璃态主题** — 渐变背景 + 浮动几何图形 + 毛玻璃卡片 UI
+- **RAG 过程可视化** — 复杂度分类标签、子问题分解展示、检索漏斗统计、子Agent详情面板
 
 ## 截图展示
 
@@ -41,20 +56,52 @@
                                     └── Milvus (稠密 + 稀疏向量)
 ```
 
-### RAG 管道
+### RAG 管道（v2.0 双路径架构）
 
 ```
-用户查询 → 混合检索 (Milvus) → Jina 重排序 → 自动合并父块
-                                                    │
-                                              LLM 相关性评分
-                                               │         │
-                                            相关       不相关
-                                              │         │
-                                              ▼         ▼
-                                          生成回答   查询重写 (退步/HyDE/复杂)
-                                                        │
-                                                   扩展检索 → 生成回答
+用户查询
+    │
+    ▼
+复杂度分类 (LLM)
+    │
+    ├── simple ──────────────────────┐
+    │                                │
+    ▼                                ▼
+complex                         标准 RAG 流程
+    │                           retrieve_initial
+    ▼                                │
+子问题分解 (2-4 个)              grade_documents
+    │                           │         │
+    ▼                         相关      不相关
+LangGraph Send API              │         │
+    │                           ▼         ▼
+    ├── 子Agent 1 (完整RAG)   生成回答  查询重写
+    ├── 子Agent 2 (完整RAG)              │
+    └── 子Agent N (完整RAG)         retrieve_expanded
+    │                                      │
+    ▼                                      ▼
+结果合成 (去重排序)                   生成回答
+    │
+    ▼
+生成回答
 ```
+
+### 检索流水线（单次检索）
+
+```
+召回 (hybrid: dense + sparse)
+    │
+    ▼
+Auto-Merge (L3→L2→L1 父块合并)  ← 先合并，让重排器看到完整上下文
+    │
+    ▼
+Jina Rerank 重排序               ← 对合并后的父块打分
+    │
+    ▼
+RERANK_MIN_SCORE 阈值过滤        ← 过滤低相关文档
+    │
+    ▼
+返回最终文档列表
 
 ## 技术栈
 
@@ -216,6 +263,40 @@ ZhiYuan/
 | GET | `/users` | 用户列表 |
 | DELETE | `/users/{username}` | 删除用户 |
 | PUT | `/users/{username}/role` | 修改角色 |
+
+## 更新日志
+
+### v2.0 (2026-06)
+
+**RAG 管道升级：**
+- 新增自适应问题复杂度路由（LLM 自动判断简单/复杂）
+- 新增并行子Agent RAG（LangGraph `Send` API，复杂问题自动拆解并行检索）
+- 检索流水线顺序优化：**召回 → Auto-Merge → Rerank → 阈值过滤**（重排器看到完整父块）
+- 新增 `RERANK_MIN_SCORE` 阈值过滤
+- 新增强制 Step-Back 降级（检索为空跳过评分）
+- 新增 `RETRIEVAL_CANDIDATE_K` 候选池显式控制
+- 独立封装 `dedupe_documents()` 去重 + `merge_retrieval_trace()` 多路trace合并
+- 子问题分解关键词兜底（模型误判时自动修正）
+
+**前端 TypeScript 化：**
+- CDN 方案 → Vite 5 + Vue 3 Composition API + TypeScript strict
+- 单体 script.js → Pinia 4 stores（auth / chat / sessions / documents）
+- 3 个文件 → 29 个模块化组件
+- 新增复杂度分类 Banner、子问题列表、检索漏斗统计、子Agent详情面板
+- RAG 步骤实时分组展示（并行子Agent每条路独立显示）
+
+**基础设施：**
+- 新增 `FAST_MODEL` 配置项（复杂度分类/子问题分解用）
+- 新增 `AUTO_MERGE_ENABLED` / `AUTO_MERGE_THRESHOLD` 环境变量
+
+### v1.0 (2026-02)
+
+- 多格式文档解析 + 三级滑动窗口分块
+- 混合检索（BGE-M3 + 自实现BM25）+ Jina Reranker
+- LangChain Agent + LangGraph RAG 管道
+- SSE 流式对话 + RAG 过程可视化
+- JWT 认证 + 用户管理 + 文档管理
+- 暗色玻璃态主题
 
 ## License
 
