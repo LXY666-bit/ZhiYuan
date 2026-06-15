@@ -12,7 +12,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 
 load_dotenv()
 
-_DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "data" / "bm25_state.json"
+_DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "bm25_state.json"
 
 
 def _create_dense_embedder() -> HuggingFaceEmbeddings:

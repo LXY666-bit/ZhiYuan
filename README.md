@@ -187,23 +187,28 @@ npm run dev
 ```
 ZhiYuan/
 ├── backend/
-│   ├── app.py              # FastAPI 入口
-│   ├── api.py              # REST API 路由
-│   ├── agent.py            # LangChain Agent + 对话存储
-│   ├── tools.py            # Agent 工具（知识库/网络/天气）
-│   ├── rag_pipeline.py     # LangGraph RAG 管道
-│   ├── rag_utils.py        # 检索/重排序/自动合并/查询扩展
-│   ├── embedding.py        # BGE-M3 稠密 + BM25 稀疏向量
-│   ├── milvus_client.py    # Milvus 连接与混合检索
-│   ├── milvus_writer.py    # 向量批量写入
-│   ├── document_loader.py  # 文档解析 + 三级分块
-│   ├── parent_chunk_store.py  # 父级分块 PostgreSQL 存储
-│   ├── upload_jobs.py      # 上传/删除任务进度管理
-│   ├── models.py           # SQLAlchemy ORM 模型
-│   ├── schemas.py          # Pydantic 请求/响应模型
-│   ├── auth.py             # JWT 认证
-│   ├── database.py         # SQLAlchemy 配置
-│   └── cache.py            # Redis 缓存
+│   ├── app.py                  # FastAPI 入口 + 中间件配置
+│   ├── core/                   # 基础设施层
+│   │   ├── database.py         # SQLAlchemy 引擎 + 会话工厂
+│   │   ├── cache.py            # Redis 缓存封装
+│   │   ├── auth.py             # JWT 认证 + 密码哈希
+│   │   ├── models.py           # SQLAlchemy ORM 模型
+│   │   └── schemas.py          # Pydantic 请求/响应模型
+│   ├── vectorstore/            # 向量存储层
+│   │   ├── embedding.py        # BGE-M3 稠密 + BM25 稀疏向量
+│   │   ├── milvus_client.py    # Milvus 连接与混合检索
+│   │   ├── milvus_writer.py    # 向量批量写入
+│   │   └── parent_chunk_store.py  # 父级分块 PostgreSQL 存储
+│   ├── rag/                    # RAG 检索层
+│   │   ├── document_loader.py  # 文档解析 + 三级分块
+│   │   ├── rag_pipeline.py     # LangGraph RAG 管道（复杂度路由 + 并行子Agent）
+│   │   └── rag_utils.py        # 检索/重排序/自动合并/查询扩展
+│   ├── agent/                  # Agent 智能体层
+│   │   ├── agent.py            # LangChain Agent + 对话存储
+│   │   └── tools.py            # Agent 工具（知识库/网络/天气）
+│   └── api/                    # API 路由层
+│       ├── routes.py           # REST API 路由
+│       └── upload_jobs.py      # 上传/删除任务进度管理
 ├── frontend/
 │   ├── src/
 │   │   ├── main.ts               # Vue 3 入口

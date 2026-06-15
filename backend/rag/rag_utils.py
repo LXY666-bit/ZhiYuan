@@ -5,9 +5,9 @@ import json
 import requests
 from dotenv import load_dotenv
 
-from .milvus_client import MilvusManager
-from .embedding import embedding_service as _embedding_service
-from .parent_chunk_store import ParentChunkStore
+from ..vectorstore.milvus_client import MilvusManager
+from ..vectorstore.embedding import embedding_service as _embedding_service
+from ..vectorstore.parent_chunk_store import ParentChunkStore
 
 from langchain.chat_models import init_chat_model
 
