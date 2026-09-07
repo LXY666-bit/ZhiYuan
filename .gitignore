@@ -1,0 +1,50 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Runtime and Docker data
+volumes/
+data/
+.artifacts/
+.worktrees/
+*.log
+*.pid
+tmp/
+evals/research/results/
+
+# OS files
+.DS_Store
+
+# Local workspace metadata
+.idea/
+.workbuddy/
+
+# Node / Frontend development
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
+frontend/output/

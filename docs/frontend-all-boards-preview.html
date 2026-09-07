@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知渊 · 前端全板块预览</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:#0b0c14;color:#f7f7fb;height:100vh;overflow:hidden}
+button{font-family:inherit;cursor:pointer}
+input,textarea,select{font-family:inherit}
+.app-page{position:relative;height:100vh;overflow:hidden}
+.aurora-orb{position:absolute;border-radius:50%;filter:blur(90px);opacity:.32;pointer-events:none}
+.aurora-orb-one{width:560px;height:560px;background:#6d5cff;top:-160px;left:180px}
+.aurora-orb-two{width:640px;height:640px;background:#2c7a8c;bottom:-220px;right:-120px}
+.app-wrapper{position:relative;display:flex;height:100vh;z-index:1}
+/* ===== 侧边栏 ===== */
+.sidebar{width:248px;flex-shrink:0;display:flex;flex-direction:column;gap:14px;padding:18px 14px;border-right:1px solid rgba(255,255,255,.07);background:rgba(13,14,22,.82);backdrop-filter:blur(14px)}
+.sidebar-header{display:flex;align-items:center;gap:11px;padding:4px 6px}
+.logo-icon{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#8068ff,#4cc3d7);display:grid;place-items:center;font-size:19px}
+.brand-copy h1{font-size:16px;font-weight:700}
+.brand-copy span{font-size:11px;color:#aeb3c2;letter-spacing:.06em}
+.workspace-switcher{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:13px;border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.04)}
+.workspace-orb{width:9px;height:9px;border-radius:50%;background:#6ee0b7;box-shadow:0 0 8px #6ee0b7;flex-shrink:0}
+.workspace-copy{flex:1;line-height:1.25}
+.workspace-copy strong{display:block;font-size:12.5px}
+.workspace-copy small{font-size:10.5px;color:#aeb3c2}
+.sidebar-nav{display:flex;flex-direction:column;gap:3px}
+.nav-btn{display:flex;align-items:center;gap:11px;padding:10px 12px;border:1px solid transparent;border-radius:11px;background:transparent;color:#c9cddb;font-size:13.5px;text-align:left;transition:background .15s}
+.nav-btn:hover{background:rgba(255,255,255,.06)}
+.nav-btn.active{background:rgba(128,104,255,.16);color:#fff;border-color:rgba(143,124,255,.4)}
+.ico{width:18px;text-align:center;font-size:14px}
+.nav-shortcut{margin-left:auto;font-size:10px;color:#8f95a8;border:1px solid rgba(255,255,255,.14);border-radius:5px;padding:1px 5px}
+.badge{margin-left:auto;font-size:10.5px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.08);color:#aeb3c2}
+.sidebar-foot{margin-top:auto;padding:10px 12px;border-radius:12px;background:rgba(255,255,255,.035);font-size:11px;color:#aeb3c2;display:flex;align-items:center;gap:8px}
+.avatar{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#ff9d6c,#c86dd7);display:grid;place-items:center;font-size:12px;flex-shrink:0}
+/* ===== 主区域通用 ===== */
+.main-content{flex:1;overflow:auto;padding:32px}
+.panel{max-width:1180px;margin:0 auto;display:none}
+.panel.on{display:block}
+.panel-head{margin-bottom:20px}
+.panel-head .kicker{font-size:12px;letter-spacing:.16em;color:#9d8cff}
+.panel-head h1{margin:4px 0;font-size:30px}
+.panel-head p{color:#aeb3c2;font-size:13.5px}
+.card{padding:20px;border:1px solid rgba(157,140,255,.24);border-radius:18px;background:rgba(20,22,35,.72);box-shadow:0 14px 35px rgba(0,0,0,.12)}
+.primary{border:0;border-radius:10px;padding:10px 16px;background:#8068ff;color:#fff;font-weight:650;font-size:13.5px}
+.primary:disabled{opacity:.45;cursor:not-allowed}
+.ghost{border:1px solid rgba(255,255,255,.18);border-radius:10px;padding:10px 16px;background:transparent;color:#e6e8f2;font-size:13.5px}
+.chip{padding:5px 10px;border-radius:999px;background:rgba(94,220,176,.14);color:#6ee0b7;font-size:12px;white-space:nowrap}
+.chip.run{background:rgba(128,104,255,.18);color:#b7a8ff}
+.chip.warn{background:rgba(255,184,77,.14);color:#ffb84d}
+.chip.err{background:rgba(255,93,117,.14);color:#ff8ea0}
+.chip.dim{background:rgba(255,255,255,.08);color:#aeb3c2}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:#8f95a8;font-weight:500;font-size:12px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.1)}
+td{padding:10px;border-bottom:1px solid rgba(255,255,255,.06);color:#e6e8f2}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.mut{color:#aeb3c2;font-size:12.5px}
+.hintbar{margin-bottom:18px;padding:10px 14px;border-radius:12px;background:rgba(157,140,255,.1);border:1px solid rgba(157,140,255,.25);font-size:12px;color:#c9cddb}
+/* ===== 登录页 ===== */
+.auth-wrap{display:none;place-items:center;height:100vh;z-index:2;position:relative}
+.auth-wrap.on{display:grid}
+.auth-panel{width:400px;padding:36px;border-radius:22px;background:rgba(20,22,35,.85);border:1px solid rgba(157,140,255,.25);text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.4)}
+.auth-panel .logo-icon{margin:0 auto 14px;width:52px;height:52px;font-size:26px}
+.auth-panel h1{font-size:22px;margin-bottom:6px}
+.auth-panel .sub{color:#aeb3c2;font-size:12.5px;margin-bottom:22px}
+.auth-panel input{width:100%;padding:11px 13px;margin-bottom:12px;border:1px solid rgba(255,255,255,.15);border-radius:10px;background:rgba(0,0,0,.2);color:inherit;font-size:13.5px}
+.auth-panel .primary{width:100%;padding:12px}
+.auth-alt{margin-top:14px;font-size:12px;color:#8f95a8}
+/* ===== 聊天 ===== */
+.chat-shell{display:grid;grid-template-columns:250px minmax(0,1fr);gap:0;height:calc(100vh - 64px);max-width:1180px;margin:0 auto;border:1px solid rgba(157,140,255,.24);border-radius:18px;overflow:hidden;background:rgba(20,22,35,.72)}
+.thread-list{border-right:1px solid rgba(255,255,255,.07);padding:14px;display:flex;flex-direction:column;gap:6px}
+.thread-item{padding:10px 12px;border-radius:10px;font-size:12.5px;color:#c9cddb;cursor:pointer}
+.thread-item.on{background:rgba(143,124,255,.14);color:#fff}
+.thread-item small{display:block;margin-top:3px;color:#8f95a8;font-size:10.5px}
+.chat-area{display:flex;flex-direction:column;min-width:0}
+.chat-scroll{flex:1;overflow:auto;padding:22px;display:flex;flex-direction:column;gap:18px}
+.msg{max-width:78%;padding:13px 16px;border-radius:16px;font-size:13.5px;line-height:1.7}
+.msg.user{align-self:flex-end;background:rgba(128,104,255,.24);border:1px solid rgba(143,124,255,.35)}
+.msg.ai{align-self:flex-start;background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08)}
+.msg .src{margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+.evc{font-size:11px;padding:3px 9px;border-radius:999px;background:rgba(76,195,215,.15);color:#7fd4e4;cursor:pointer}
+.evc:hover{background:rgba(76,195,215,.28)}
+.timeline{align-self:flex-start;width:78%;font-size:11.5px;color:#8f95a8;display:flex;flex-direction:column;gap:5px;padding-left:6px}
+.timeline b{color:#b7a8ff;font-weight:600}
+.chat-input{padding:14px 18px;border-top:1px solid rgba(255,255,255,.07)}
+.chat-input .box{display:flex;gap:10px;align-items:flex-end}
+.chat-input textarea{flex:1;resize:none;padding:11px 13px;border:1px solid rgba(255,255,255,.15);border-radius:12px;background:rgba(0,0,0,.2);color:inherit;font-size:13px;height:44px}
+.mode-sel{display:flex;gap:6px;margin-bottom:10px}
+.mode-pill{font-size:11px;padding:4px 11px;border-radius:999px;border:1px solid rgba(255,255,255,.14);background:transparent;color:#aeb3c2}
+.mode-pill.on{background:rgba(128,104,255,.2);border-color:#8f7cff;color:#fff}
+/* ===== 研搜（沿用） ===== */
+.research-grid{display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr);gap:16px}
+.research-detail{display:grid;gap:16px}
+.project-list{display:flex;flex-direction:column;gap:8px;align-self:start}
+.project-list button{text-align:left;padding:12px;border:1px solid transparent;border-radius:12px;background:transparent;color:inherit}
+.project-list button.on{border-color:#8f7cff;background:rgba(143,124,255,.12)}
+.project-list strong{display:block;font-size:13.5px}
+.project-list small{display:block;margin-top:5px;color:#aeb3c2;font-size:11.5px}
+.metric-row{display:flex;gap:22px;margin-top:10px;font-size:12.5px;color:#c9cddb}
+.metric-row span{display:flex;align-items:center;gap:6px}
+.dot{width:6px;height:6px;border-radius:50%;background:#9d8cff}
+details{border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:10px 14px;margin-bottom:8px;font-size:13px}
+summary{cursor:pointer;color:#e6e8f2}
+details pre{white-space:pre-wrap;font:inherit;line-height:1.65;color:#c9cddb;margin-top:8px}
+.artifact-link{display:block;padding:8px 0;border:0;background:transparent;color:#aa9cff;font-size:13.5px;text-align:left}
+ol.plan{padding-left:22px;font-size:13px}
+ol.plan li{padding:7px}
+ol.plan li p{margin:5px 0;color:#c9cddb}
+ol.plan li small{color:#8f95a8;font-size:11px}
+/* ===== 能力中心 / 卡片 ===== */
+.cap-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+.cap-card{padding:18px;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:rgba(255,255,255,.035)}
+.cap-card h3{font-size:15px;display:flex;align-items:center;gap:9px;margin-bottom:8px}
+.cap-card p{font-size:12.5px;color:#aeb3c2;line-height:1.6;margin-bottom:10px}
+.tags{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:10.5px;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.07);color:#aeb3c2}
+.tag.ok{color:#6ee0b7;background:rgba(94,220,176,.12)}
+.tag.no{color:#ff8ea0;background:rgba(255,93,117,.12)}
+/* ===== 模型中心 ===== */
+.role-card{padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.035)}
+.role-card h4{font-size:13px;color:#b7a8ff;margin-bottom:6px}
+/* ===== RAG 评估 ===== */
+.gate-row{display:grid;grid-template-columns:110px 1fr 60px;gap:12px;align-items:center;margin-bottom:9px;font-size:12.5px}
+.bar{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#8068ff,#4cc3d7)}
+.trend{display:flex;align-items:flex-end;gap:10px;height:120px;padding:0 4px}
+.trend .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px}
+.trend .stick{width:100%;border-radius:6px 6px 0 0;background:rgba(128,104,255,.55)}
+.trend small{color:#8f95a8;font-size:10px}
+/* ===== 浮层 ===== */
+.overlay{position:fixed;inset:0;background:rgba(5,6,12,.6);backdrop-filter:blur(4px);display:none;place-items:center;z-index:50}
+.overlay.on{display:grid}
+.palette{width:520px;border-radius:18px;background:rgba(22,24,38,.97);border:1px solid rgba(157,140,255,.3);overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.palette input{width:100%;padding:16px 18px;border:0;border-bottom:1px solid rgba(255,255,255,.08);background:transparent;color:inherit;font-size:15px;outline:none}
+.palette .item{padding:12px 18px;font-size:13.5px;color:#c9cddb;display:flex;gap:10px;align-items:center}
+.palette .item.on{background:rgba(128,104,255,.18);color:#fff}
+.palette .item small{margin-left:auto;color:#8f95a8;font-size:11px}
+.dialog{width:420px;border-radius:18px;background:rgba(22,24,38,.97);border:1px solid rgba(255,184,77,.35);padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.dialog h3{font-size:16px;margin-bottom:8px;display:flex;gap:9px;align-items:center}
+.dialog p{font-size:12.5px;color:#aeb3c2;line-height:1.6;margin-bottom:16px}
+.dialog .row{justify-content:flex-end}
+/* ===== 智能问数（作用域限定在 #p-dataqa，避免与全局 .card/.ghost/.chip/.dot 冲突） ===== */
+#p-dataqa{--dq-text:#f7f7fb;--dq-sub:#aeb3c2;--dq-card:rgba(20,22,35,.72);--dq-border:rgba(157,140,255,.24);--dq-accent:#8068ff;--dq-blue:#3d8fd1}
+#p-dataqa .card{padding:20px;border:1px solid var(--dq-border);border-radius:18px;background:var(--dq-card);box-shadow:0 14px 35px rgba(0,0,0,.12)}
+#p-dataqa .primary{border:0;border-radius:10px;padding:10px 18px;background:var(--dq-accent);color:#fff;font-weight:650;cursor:pointer;font-size:14px}
+#p-dataqa .primary:disabled{opacity:.55;cursor:not-allowed}
+#p-dataqa .ghost{padding:4px 10px;border:1px solid rgba(255,255,255,.22);border-radius:8px;background:transparent;color:#e6e8f2;font-size:12px;cursor:pointer}
+#p-dataqa .ghost:disabled{opacity:.5;cursor:not-allowed}
+#p-dataqa .dq-grid{display:grid;grid-template-columns:250px minmax(0,1fr);gap:16px;align-items:start}
+#p-dataqa .ask-form{display:block;margin-bottom:16px}
+#p-dataqa .ask-form label{display:block;margin-bottom:8px;font-weight:600;font-size:14px}
+#p-dataqa .ask-row{display:flex;gap:10px}
+#p-dataqa .ask-row input{flex:1;padding:10px 12px;border:1px solid rgba(255,255,255,.18);border-radius:9px;background:rgba(0,0,0,.18);color:#f7f7fb;font-size:14px}
+#p-dataqa .query-list{display:flex;flex-direction:column;gap:8px}
+#p-dataqa .query-list button{text-align:left;padding:12px;border:1px solid transparent;border-radius:12px;background:transparent;color:#c9cddb;cursor:pointer;font-family:inherit;font-size:inherit}
+#p-dataqa .query-list button.active{border-color:#8f7cff;background:rgba(143,124,255,.12);color:#fff}
+#p-dataqa .query-list strong{font-size:13px;font-weight:600;display:block}
+#p-dataqa .query-list small{display:block;margin-top:5px;color:var(--dq-sub);font-size:11px}
+#p-dataqa .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;background:#78dca0}
+#p-dataqa .dot.running{background:#f0c56a;animation:dq-pulse 1.2s infinite}
+@keyframes dq-pulse{50%{opacity:.35}}
+#p-dataqa .detail-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px}
+#p-dataqa .question-row{display:flex;align-items:center;gap:10px;min-width:0}
+#p-dataqa .question-dot{width:26px;height:26px;border-radius:50%;background:var(--dq-blue);flex:none}
+#p-dataqa .question-text{font-size:15px;font-weight:600}
+#p-dataqa .status-chip{padding:2px 10px;border-radius:10px;border:1px solid rgba(120,220,160,.6);color:#8fd1b5;font-size:12px;white-space:nowrap}
+#p-dataqa .block-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:20px 0 8px;font-weight:600;font-size:14px}
+#p-dataqa .block-heading .muted{font-weight:400;font-size:12px;color:var(--dq-sub)}
+#p-dataqa .sql-block{margin:0;padding:12px;border-radius:10px;background:rgba(0,0,0,.28);font-family:Consolas,"Courier New",monospace;font-size:12.5px;line-height:1.6;overflow-x:auto;white-space:pre-wrap;word-break:break-all;color:var(--dq-text)}
+#p-dataqa .sql-block .kw{color:#9d8cff;font-weight:600}
+#p-dataqa .sql-block .fn{color:#6fb3e0}
+#p-dataqa .sql-block .num{color:#f0c56a}
+#p-dataqa .rationale-card{padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.18);margin-bottom:8px}
+#p-dataqa .rationale-title{display:flex;align-items:baseline;gap:8px;margin-bottom:4px;font-size:13px}
+#p-dataqa .table-name{font-weight:650}
+#p-dataqa .table-comment{font-weight:400;color:var(--dq-sub)}
+#p-dataqa .table-reason{margin:0 0 8px;font-size:12px;color:var(--dq-sub)}
+#p-dataqa .chip-row{display:flex;flex-wrap:wrap;gap:6px}
+#p-dataqa .chip{padding:2px 8px;border-radius:10px;border:1px solid rgba(255,255,255,.22);background:transparent;color:#c9cddb;font-size:11px}
+#p-dataqa .chart-select{padding:3px 8px;border:1px solid rgba(255,255,255,.22);border-radius:6px;background:rgba(0,0,0,.18);color:#f7f7fb;font-size:12px}
+#p-dataqa .chart-box{padding:8px 4px 0;border-bottom:1px solid rgba(255,255,255,.15)}
+#p-dataqa .chart-svg{width:100%;height:230px;display:block}
+#p-dataqa .bar{fill:var(--dq-blue);transition:opacity .2s}
+#p-dataqa .bar:hover{opacity:.8}
+#p-dataqa .line{stroke:var(--dq-blue);stroke-width:2.5;fill:none}
+#p-dataqa .pie-slice{stroke:rgba(0,0,0,.2);stroke-width:1}
+#p-dataqa .value-label{font-size:11px;fill:var(--dq-sub)}
+#p-dataqa .axis-label{font-size:11px;fill:var(--dq-sub)}
+#p-dataqa .chart-labels{display:flex;flex-wrap:wrap;gap:10px;padding:6px 0 8px}
+#p-dataqa .chart-label{font-size:11px;color:var(--dq-sub);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+#p-dataqa .legend-dot{width:8px;height:8px;border-radius:50%;flex:none}
+#p-dataqa .table-scroll{overflow-x:auto}
+#p-dataqa .result-table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
+#p-dataqa .result-table th{padding:6px 8px;text-align:left;font-weight:500;color:var(--dq-sub);background:rgba(0,0,0,.18);border-bottom:1px solid rgba(255,255,255,.15)}
+#p-dataqa .result-table td{padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.1);color:#e6e8f2}
+#p-dataqa .result-table tr:hover td{background:rgba(143,124,255,.06)}
+#p-dataqa .analysis-text{margin:6px 0 0;font-size:12.5px;line-height:1.7;white-space:pre-wrap}
+#p-dataqa .analysis-hint{margin:6px 0 0;font-size:12px;color:var(--dq-sub)}
+#p-dataqa .copied-tip{font-size:12px;color:#8fd1b5;margin-left:8px}
+#p-dataqa .footnote{margin-top:18px;font-size:12px;color:var(--dq-sub);text-align:center}
+@media(max-width:960px){.grid2,.grid3,.grid4,.cap-grid,.research-grid,.chat-shell{grid-template-columns:1fr}#p-dataqa .dq-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app-page">
+  <div class="aurora-orb aurora-orb-one"></div>
+  <div class="aurora-orb aurora-orb-two"></div>
+  <div class="app-wrapper">
+    <!-- 侧边栏 -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-icon">🐱</div>
+        <div class="brand-copy"><h1>知渊</h1><span>Knowledge Copilot</span></div>
+      </div>
+      <div class="workspace-switcher">
+        <span class="workspace-orb"></span>
+        <span class="workspace-copy"><strong>知渊知识空间</strong><small>默认工作区</small></span>
+        <span style="color:#8f95a8;font-size:11px">▾</span>
+      </div>
+      <nav class="sidebar-nav" id="nav">
+        <button class="nav-btn" data-p="research"><span class="ico">🔍</span><span>深度研搜</span></button>
+        <button class="nav-btn on" data-p="chat"><span class="ico">💬</span><span>智能对话</span></button>
+        <button class="nav-btn" data-p="history"><span class="ico">🕘</span><span>历史对话</span><span class="badge">12</span></button>
+        <button class="nav-btn" data-p="caps"><span class="ico">✨</span><span>能力中心</span><span class="nav-shortcut">⌘K</span></button>
+        <button class="nav-btn" data-p="kb"><span class="ico">🔖</span><span>知识库</span></button>
+        <button class="nav-btn" data-p="models"><span class="ico">🧠</span><span>模型中心</span></button>
+        <button class="nav-btn" data-p="capadmin"><span class="ico">⚙️</span><span>能力管理</span></button>
+        <button class="nav-btn" data-p="eval"><span class="ico">📊</span><span>RAG 评估</span></button>
+        <button class="nav-btn" data-p="dataqa"><span class="ico">📈</span><span>智能问数</span><span class="badge">New</span></button>
+        <button class="nav-btn" data-p="login"><span class="ico">🚪</span><span>登录页（未登录态）</span></button>
+      </nav>
+      <div class="sidebar-foot"><span class="avatar">知</span><span>demo@zhiyuan.ai<br><small style="color:#6ee0b7">● 已登录 · admin</small></span></div>
+    </aside>
+
+    <main class="main-content">
+      <!-- ============ 智能对话 ============ -->
+      <section class="panel on" id="p-chat">
+        <div class="chat-shell">
+          <aside class="thread-list">
+            <div style="font-size:11px;color:#8f95a8;padding:4px 12px">THREADS</div>
+            <div class="thread-item on">RAG 框架选型咨询<small>今天 · 12 条消息</small></div>
+            <div class="thread-item">Milvus 混合检索调参<small>昨天 · 8 条消息</small></div>
+            <div class="thread-item">评标报告审查规则梳理<small>09-28 · 21 条消息</small></div>
+            <div class="thread-item">BGE-M3 部署问题排查<small>09-25 · 5 条消息</small></div>
+          </aside>
+          <div class="chat-area">
+            <div class="chat-scroll">
+              <div class="msg user">知渊的混合检索链路是怎么工作的？</div>
+              <div class="timeline">
+                <span><b>plan</b> 复杂度判定：复杂 → 拆分 3 个子问题并行检索</span>
+                <span><b>retrieve</b> Dense + Milvus 原生 BM25 双路召回 → RRF 融合 → Auto-merging</span>
+                <span><b>rerank</b> Jina Rerank 命中，预算内完成（2 次尝试）</span>
+                <span><b>grade</b> Grader 判定：证据充分，无需重写</span>
+              </div>
+              <div class="msg ai">
+                知渊的检索链路是「稠密向量 + Milvus 原生 BM25 稀疏向量」双路召回，经 <b>RRF 融合</b>后在完整候选池上做 Auto-merging，再进入带预算、超时与熔断的 Rerank 阶段 <span class="evc">[E1] rag/pipeline.py</span><span class="evc">[E3] docs/adr/0019</span>。Step-back/HyDE 只执行一次；只有 Adapter 明确报告能力不兼容才降级 Dense，其余失败会显式报错 <span class="evc">[E5] README 架构能力</span>。
+                <div class="src"><span class="evc">[E1] backend/rag/pipeline.py</span><span class="evc">[E2] ADR-0012 重试语义</span><span class="evc">[E3] ADR-0019 Web 引用</span><span class="evc">[E5] README.md</span></div>
+              </div>
+            </div>
+            <div class="chat-input">
+              <div class="mode-sel">
+                <button class="mode-pill on">智能对话</button>
+                <button class="mode-pill">知识库问答</button>
+                <button class="mode-pill">专业 Skill</button>
+              </div>
+              <div class="box">
+                <textarea placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+                <button class="primary">发送</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 深度研搜 ============ -->
+      <section class="panel" id="p-research">
+        <div class="panel-head row">
+          <div><p class="kicker">RESEARCH WORKBENCH</p><h1>深度研搜</h1><p>先生成并审批研究计划，再由 canonical Run 完成证据、核验和报告交付。</p></div>
+          <button class="primary">＋ 新建研究</button>
+        </div>
+        <div class="research-grid">
+          <aside class="card project-list">
+            <button class="on"><strong>国产 RAG 框架 2026 技术选型对比</strong><small>STANDARD · running</small></button>
+            <button><strong>评标智能审查 Agent 竞品分析</strong><small>DEEP · completed</small></button>
+            <button><strong>多模态文档解析方案调研</strong><small>QUICK · awaiting_approval</small></button>
+          </aside>
+          <main class="research-detail">
+            <article class="card">
+              <div class="row"><div><h3 style="font-size:16px">国产 RAG 框架 2026 技术选型对比</h3><p class="mut">调研主流国产 RAG 框架的检索质量、工程成本与生态成熟度。</p></div><span class="chip run">● running</span></div>
+              <div class="metric-row"><span><i class="dot"></i>Evidence 27 / 30</span><span><i class="dot"></i>Claims 14</span><span><i class="dot"></i>Sections 4 / 5</span></div>
+            </article>
+            <article class="card">
+              <h3 style="font-size:14.5px;margin-bottom:10px">研究计划 v3 <span class="chip" style="margin-left:8px">已批准 · 快照冻结</span></h3>
+              <ol class="plan">
+                <li><strong>主流框架盘点</strong><p>识别 2026 年活跃维护的国产 RAG 框架及定位差异。</p><small>web / knowledge_base</small></li>
+                <li><strong>检索质量评测</strong><p>收集公开基准上的召回与重排表现。</p><small>web</small></li>
+                <li><strong>工程成本与生态</strong><p>部署复杂度、License、社区活跃度与生产案例。</p><small>web / knowledge_base</small></li>
+              </ol>
+            </article>
+            <article class="card">
+              <div class="row"><h3 style="font-size:14.5px">执行状态</h3><span class="chip">Run #7 · 第 2 轮</span></div>
+              <p class="mut" style="margin-top:8px">缺口补研中：检测到 2 个证据缺口，已触发 1/1 轮补研（最多 2 个缺口）。</p>
+            </article>
+            <article class="card">
+              <h3 style="font-size:14.5px;margin-bottom:10px">章节</h3>
+              <details open><summary>01 · 框架盘点与定位 · completed</summary><pre>2026 年仍活跃维护的国产 RAG 框架共 6 个，按定位分为开箱即用型、编排优先型与检索增强型三类 [E3][E7]……</pre></details>
+              <details><summary>02 · 检索质量评测 · writing</summary><pre>（生成中… 当前章节 Evidence 预算 8 条）</pre></details>
+              <details><summary>03 · 工程成本与生态 · pending</summary><pre>等待上游 Evidence 预算释放。</pre></details>
+            </article>
+            <article class="card"><h3 style="font-size:14.5px;margin-bottom:6px">交付物</h3>
+              <button class="artifact-link">📄 选型建议报告-draft-v2.md · published v2</button>
+            </article>
+          </main>
+        </div>
+      </section>
+
+      <!-- ============ 历史对话 ============ -->
+      <section class="panel" id="p-history">
+        <div class="panel-head"><p class="kicker">HISTORY</p><h1>历史对话</h1><p>Thread 是长期会话容器，按 sequence 保存不可变 Message，可随时回到任一会话继续。</p></div>
+        <div class="card">
+          <table>
+            <tr><th>标题</th><th>消息数</th><th>最近活跃</th><th>状态</th><th></th></tr>
+            <tr><td>RAG 框架选型咨询</td><td>12</td><td>今天 14:20</td><td><span class="chip dim">idle</span></td><td><button class="ghost">继续对话</button></td></tr>
+            <tr><td>Milvus 混合检索调参</td><td>8</td><td>昨天 18:02</td><td><span class="chip dim">idle</span></td><td><button class="ghost">继续对话</button></td></tr>
+            <tr><td>评标报告审查规则梳理</td><td>21</td><td>09-28</td><td><span class="chip run">run running</span></td><td><button class="ghost">观察 Run</button></td></tr>
+            <tr><td>知识库接入方案讨论</td><td>15</td><td>09-26</td><td><span class="chip warn">等待 HITL 输入</span></td><td><button class="ghost">恢复审批</button></td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 能力中心 ============ -->
+      <section class="panel" id="p-caps">
+        <div class="panel-head row">
+          <div><p class="kicker">CAPABILITY CENTER</p><h1>能力中心</h1><p>查看当前账号可见的 Skill 与 Tool；不可用能力标记原因，不会创建 Run。</p></div>
+          <button class="ghost" onclick="show('palette')">⌘K 打开命令面板</button>
+        </div>
+        <div class="cap-grid">
+          <div class="cap-card"><h3>📚 Knowledge Base</h3><p>使用当前发布的 Document Version 进行 RAG 问答，展示检索、评判、重写、合并与引用信息。</p><div class="tags"><span class="tag ok">可用</span><span class="tag">角色：user</span><span class="tag">无需审批</span></div></div>
+          <div class="cap-card"><h3>🌐 Web Research</h3><p>调查公开问题。受 feature flag、已配置 Tavily API Key、角色与受限公网策略约束；外部事实必须引用当前 Run 的 Web Evidence。</p><div class="tags"><span class="tag ok">可用</span><span class="tag">角色：user</span><span class="tag">SSRF policy</span><span class="tag">无需审批</span></div></div>
+          <div class="cap-card"><h3>🗄️ SQL Assistant</h3><p>以自然语言查询指标，仅访问 allowlist 内 PostgreSQL catalog，只读，不提供 DDL/DML。</p><div class="tags"><span class="tag no">权限不足</span><span class="tag">角色：admin</span><span class="tag">AST + RLS</span></div></div>
+          <div class="cap-card"><h3>📦 Sandbox</h3><p>Python / Shell 隔离代码执行。固定无网络、无宿主挂载、无持久 workspace；创建 Run 前需审批。</p><div class="tags"><span class="tag ok">可用</span><span class="tag">需预授权</span><span class="tag">固定 digest image</span></div></div>
+        </div>
+      </section>
+
+      <!-- ============ 知识库 ============ -->
+      <section class="panel" id="p-kb">
+        <div class="panel-head row">
+          <div><p class="kicker">DOCUMENTS</p><h1>知识库</h1><p>不可变 Document Version 两阶段发布：candidate 隔离构建核验后，CAS 原子切换当前版本。</p></div>
+          <button class="primary">⬆ 上传文档</button>
+        </div>
+        <div class="card">
+          <table>
+            <tr><th>文档</th><th>当前版本</th><th>分块</th><th>索引状态</th><th>操作</th></tr>
+            <tr><td>知渊-架构说明.docx</td><td>v3 <span class="chip" style="margin-left:6px">published</span></td><td>214</td><td><span class="chip">健康</span></td><td><button class="ghost">上传新版本</button></td></tr>
+            <tr><td>评标审查规则-v2.pdf</td><td>v5 <span class="chip" style="margin-left:6px">published</span></td><td>1,032</td><td><span class="chip">健康</span></td><td><button class="ghost">上传新版本</button></td></tr>
+            <tr><td>国产RAG框架调研.md</td><td>v2-candidate <span class="chip run" style="margin-left:6px">building</span></td><td>—</td><td><span class="chip warn">构建中（隔离 scope）</span></td><td><button class="ghost" disabled>等待发布</button></td></tr>
+            <tr><td>历史评测记录.xlsx</td><td>v1 <span class="chip" style="margin-left:6px">published</span></td><td>48</td><td><span class="chip err">上次构建失败</span></td><td><button class="ghost">重试索引</button></td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 模型中心 ============ -->
+      <section class="panel" id="p-models">
+        <div class="panel-head row">
+          <div><p class="kicker">MODEL CENTER</p><h1>模型中心</h1><p>维护不含 Secret 的 Model Profile 并分配四类角色；API Key 只存服务端，前端仅显示已配置/未配置。</p></div>
+          <button class="primary">＋ 新建 Model Profile</button>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+          <table>
+            <tr><th>Profile</th><th>模型标识</th><th>Base URL</th><th>Stream</th><th>Structured</th><th>状态</th></tr>
+            <tr><td>qwen-max 主力</td><td>qwen3.7-max</td><td>dashscope兼容端点</td><td>✅</td><td>✅</td><td><span class="chip">enabled</span></td></tr>
+            <tr><td>qwen-fast 轻量</td><td>qwen3.5-turbo</td><td>dashscope兼容端点</td><td>✅</td><td>✅</td><td><span class="chip">enabled</span></td></tr>
+            <tr><td>deepseek 备选</td><td>deepseek-v4</td><td>api.deepseek.com</td><td>✅</td><td>❌</td><td><span class="chip dim">disabled</span></td></tr>
+          </table>
+        </div>
+        <div class="grid4">
+          <div class="role-card"><h4>Answer 角色</h4><p class="mut">qwen-max 主力</p><span class="chip" style="margin-top:8px">已分配</span></div>
+          <div class="role-card"><h4>Fast 角色</h4><p class="mut">qwen-fast 轻量</p><span class="chip" style="margin-top:8px">已分配</span></div>
+          <div class="role-card"><h4>Grader 角色</h4><p class="mut">qwen-fast 轻量</p><span class="chip" style="margin-top:8px">已分配</span></div>
+          <div class="role-card"><h4>Evaluator 角色</h4><p class="mut">qwen-max 主力</p><span class="chip" style="margin-top:8px">已分配</span></div>
+        </div>
+        <p class="mut" style="margin-top:12px">ⓘ Run 与 Evaluation Job 创建时冻结完整 Model Snapshot，控制面后续修改不影响执行中任务。</p>
+      </section>
+
+      <!-- ============ 能力管理 ============ -->
+      <section class="panel" id="p-capadmin">
+        <div class="panel-head"><p class="kicker">CAPABILITY ADMIN</p><h1>能力管理</h1><p>配置 SQL Assistant、Tavily Web Research、内建与自定义 Skill 及受限 HTTPS JSON Tool；Secret 值只保存在服务端。</p></div>
+        <div class="grid2">
+          <div class="cap-card"><h3>🗄️ SQL Assistant</h3><p>独立数据库账号 · schema/table allowlist · AST 校验 · RLS · 成本/超时/结果上限 · 敏感字段脱敏。</p><div class="tags"><span class="tag ok">admin 专用</span><span class="tag ok">只读</span><span class="tag">已配置 3 个 allowlist</span></div></div>
+          <div class="cap-card"><h3>🌐 Tavily API</h3><p>Web Research 的搜索来源。三种研究模式均使用服务端 API Key 和 advanced 检索档位。</p><div class="tags"><span class="tag ok">运行中</span><span class="tag">API Key</span><span class="tag">feature flag 开</span></div></div>
+          <div class="cap-card"><h3>🧩 内建 Skill（3）</h3><p>知识库问答、Web Research、Sandbox 能力包；版本固定，声明允许的 Tool 集合。</p><div class="tags"><span class="tag ok">v1.2 启用</span><span class="tag">版本化</span></div></div>
+          <div class="cap-card"><h3>🔗 受限 HTTPS JSON Tool</h3><p>模型只允许调用域名白名单内的 JSON 接口，响应经 schema 校验后进入上下文。</p><div class="tags"><span class="tag warn">1 条规则待审</span><span class="tag">域名白名单 2</span></div></div>
+        </div>
+      </section>
+
+      <!-- ============ RAG 评估 ============ -->
+      <section class="panel" id="p-eval">
+        <div class="panel-head row">
+          <div><p class="kicker">RAG EVALUATION</p><h1>RAG 评估</h1><p>版本化 Dataset → 持久 Evaluation Job（独立 Worker 逐 Case 执行）→ 与 baseline 及质量 Gate 比较。</p></div>
+          <div><button class="ghost">导入 Dataset</button> <button class="primary">▶ 启动评估 Job</button></div>
+        </div>
+        <div class="grid2" style="margin-bottom:16px">
+          <div class="card">
+            <h3 style="font-size:14.5px;margin-bottom:14px">Job #42 · regress-gate（运行中）</h3>
+            <div class="gate-row"><span>correctness</span><div class="bar"><i style="width:88%"></i></div><span class="mut">0.88 ✓</span></div>
+            <div class="gate-row"><span>groundedness</span><div class="bar"><i style="width:93%"></i></div><span class="mut">0.93 ✓</span></div>
+            <div class="gate-row"><span>relevance</span><div class="bar"><i style="width:84%"></i></div><span class="mut">0.84 ✓</span></div>
+            <div class="gate-row"><span>completeness</span><div class="bar"><i style="width:71%;background:#ffb84d"></i></div><span class="mut">0.71 ⚠</span></div>
+            <div class="gate-row"><span>unsupported</span><div class="bar"><i style="width:6%;background:#ff5d75"></i></div><span class="mut">0.06 ✓</span></div>
+            <p class="mut" style="margin-top:10px">进度 37/60 Case · baseline：v1.1 标准集 · Gate：全部通过后允许合入</p>
+          </div>
+          <div class="card">
+            <h3 style="font-size:14.5px;margin-bottom:14px">correctness 近 8 次趋势</h3>
+            <div class="trend">
+              <div class="col"><div class="stick" style="height:62%"></div><small>0.78</small></div>
+              <div class="col"><div class="stick" style="height:66%"></div><small>0.80</small></div>
+              <div class="col"><div class="stick" style="height:70%"></div><small>0.82</small></div>
+              <div class="col"><div class="stick" style="height:68%"></div><small>0.81</small></div>
+              <div class="col"><div class="stick" style="height:75%"></div><small>0.84</small></div>
+              <div class="col"><div class="stick" style="height:80%"></div><small>0.86</small></div>
+              <div class="col"><div class="stick" style="height:85%"></div><small>0.87</small></div>
+              <div class="col"><div class="stick" style="height:88%;background:#6ee0b7"></div><small>0.88</small></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <table>
+            <tr><th>Case</th><th>问题</th><th>Judge 结论</th><th>Evidence 一致性</th></tr>
+            <tr><td>#17</td><td>Milvus 稀疏向量索引参数如何设置？</td><td><span class="chip">correct</span></td><td><span class="chip dim">identity 匹配</span></td></tr>
+            <tr><td>#23</td><td>Rerank 失败后检索会降级到哪一层？</td><td><span class="chip warn">completeness 不足</span></td><td><span class="chip dim">identity 匹配</span></td></tr>
+            <tr><td>#41</td><td>知渊支持哪些导出格式？</td><td><span class="chip err">unsupported claim ×1</span></td><td><span class="chip warn">引用越界</span></td></tr>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 智能问数 ============ -->
+      <section class="panel" id="p-dataqa">
+        <div class="panel-head row">
+          <div><p class="kicker">DATA QA WORKBENCH</p><h1>智能问数</h1><p>自然语言直达授权库：一次提问自动完成取授权表结构、生成只读 SQL、说明选表依据、执行并按结果形状推断图表。</p></div>
+          <span class="chip run">● channel=dataqa</span>
+        </div>
+        <form class="card ask-form" onsubmit="return false;">
+          <label for="dq-q">问题</label>
+          <div class="ask-row">
+            <input id="dq-q" value="销量前五的商品是哪些？" maxlength="500" />
+            <button class="primary" type="submit">开始问数</button>
+          </div>
+        </form>
+        <div class="dq-grid">
+          <aside class="card query-list" id="dq-queryList"></aside>
+          <main class="card">
+            <div class="detail-heading">
+              <div class="question-row">
+                <span class="question-dot"></span>
+                <span class="question-text">销量前五的商品是哪些？</span>
+              </div>
+              <span class="status-chip">已完成</span>
+            </div>
+
+            <!-- 区块二：生成 SQL -->
+            <div class="block-heading">
+              <span>生成 SQL</span>
+              <span><span class="copied-tip" id="dq-copiedTip" style="display:none">已复制 ✓</span>
+              <button class="ghost" id="dq-copyBtn" type="button">复制</button></span>
+            </div>
+            <pre class="sql-block" id="dq-sqlBlock"></pre>
+
+            <!-- 区块三：表／字段选择依据 -->
+            <div class="block-heading"><span>表／字段选择依据</span></div>
+            <div class="rationale-card">
+              <div class="rationale-title">
+                <span class="table-name">biz_order_goods</span>
+                <span class="table-comment">订单商品明细</span>
+              </div>
+              <p class="table-reason">问题问的是「商品销量」，该表包含商品名与购买数量字段，按商品聚合即可直接回答，无需关联订单主表。</p>
+              <div class="chip-row">
+                <span class="chip">表分 92</span>
+                <span class="chip">good_name · 商品名</span>
+                <span class="chip">num · 数量</span>
+                <span class="chip">price · 单价</span>
+              </div>
+            </div>
+            <div class="rationale-card">
+              <div class="rationale-title">
+                <span class="table-name">biz_order</span>
+                <span class="table-comment">订单主表</span>
+              </div>
+              <p class="table-reason">仅用于排除已取消订单的状态过滤（status ≠ cancelled），保证销量口径一致。</p>
+              <div class="chip-row">
+                <span class="chip">表分 71</span>
+                <span class="chip">order_id · 订单号</span>
+                <span class="chip">status · 订单状态</span>
+              </div>
+            </div>
+
+            <!-- 区块四：图表展示 -->
+            <div class="block-heading">
+              <span>图表展示</span>
+              <select class="chart-select" id="dq-chartSelect" aria-label="图表类型">
+                <option value="auto">自动（柱状图）</option>
+                <option value="bar">柱状图</option>
+                <option value="line">折线图</option>
+                <option value="pie">饼图</option>
+                <option value="none">不展示</option>
+              </select>
+            </div>
+            <div class="chart-box" id="dq-chartBox">
+              <svg class="chart-svg" id="dq-chartSvg" viewBox="0 0 640 230" role="img" aria-label="查询结果图表"></svg>
+              <div class="chart-labels" id="dq-chartLabels"></div>
+            </div>
+
+            <!-- 区块五：查询结果 -->
+            <div class="block-heading">
+              <span>查询结果</span>
+              <span class="muted">共 5 条</span>
+            </div>
+            <div class="table-scroll">
+              <table class="result-table">
+                <thead><tr><th>good_name</th><th>total_num</th></tr></thead>
+                <tbody id="dq-resultBody"></tbody>
+              </table>
+            </div>
+
+            <!-- 区块六：内容分析 -->
+            <div class="block-heading">
+              <span>内容分析</span>
+              <button class="ghost" id="dq-analysisBtn" type="button">生成数据分析</button>
+            </div>
+            <p class="analysis-hint" id="dq-analysisHint">已先返回数据库查询结果。如需趋势、异常和建议，可点击右侧按钮生成分析。</p>
+            <p class="analysis-text" id="dq-analysisText" style="display:none"></p>
+          </main>
+        </div>
+        <p class="footnote">静态预览 · 对应 DataqaWorkbench.vue 实际实现 · 执行走 channel="dataqa" 的持久化 Run，SQL 由 SqlAssistantRuntime 策略强制只读</p>
+      </section>
+
+      <!-- ============ 登录页 ============ -->
+      <section class="panel" id="p-login" style="max-width:none">
+        <div style="display:grid;place-items:center;min-height:70vh">
+          <div class="auth-panel">
+            <div class="logo-icon">🐱</div>
+            <h1>知渊</h1>
+            <p class="sub">安全连接你的私有知识空间 · Access Token 仅驻留内存</p>
+            <input placeholder="用户名或邮箱" value="demo@zhiyuan.ai">
+            <input type="password" placeholder="密码" value="········">
+            <button class="primary">登 录</button>
+            <p class="auth-alt">没有账号？<span style="color:#b7a8ff;cursor:pointer">注册</span> · Refresh Token 经 HttpOnly Cookie 轮换</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- 命令面板 -->
+<div class="overlay" id="palette" onclick="if(event.target===this)hide('palette')">
+  <div class="palette">
+    <input placeholder="搜索模式或 Skill…（↑↓ 选择，Enter 确认，Esc 关闭）">
+    <div class="item on">💬 智能对话<small>mode</small></div>
+    <div class="item">📚 知识库问答<small>mode</small></div>
+    <div class="item">🌐 Web Research<small>skill</small></div>
+    <div class="item">🗄️ SQL Assistant<small>skill · admin</small></div>
+    <div class="item">📦 Sandbox<small>skill · 需预授权</small></div>
+    <div class="item">📈 智能问数<small>board</small></div>
+  </div>
+</div>
+<!-- 审批弹窗 -->
+<div class="overlay" id="approval" onclick="if(event.target===this)hide('approval')">
+  <div class="dialog">
+    <h3>⚠️ Sandbox 执行需要审批</h3>
+    <p>本次 Run 将在隔离环境中执行 <b>Python</b> 代码：无网络、无宿主挂载、无持久 workspace。审批在 Run 创建前完成，批准后签发 names-only grant。</p>
+    <div class="row"><button class="ghost" onclick="hide('approval')">拒绝</button><button class="primary" onclick="hide('approval')">批准并创建 Run</button></div>
+  </div>
+</div>
+
+<script>
+const nav=document.getElementById('nav');
+function show(id){['palette','approval'].forEach(x=>document.getElementById(x).classList.toggle('on',x===id))}
+function hide(id){document.getElementById(id).classList.remove('on')}
+nav.addEventListener('click',e=>{
+  const b=e.target.closest('.nav-btn');if(!b)return;
+  nav.querySelectorAll('.nav-btn').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+  document.getElementById('p-'+b.dataset.p).classList.add('on');
+});
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();show('palette')}
+  if(e.key==='Escape')hide('palette');
+});
+// 交互彩蛋：聊天模式 pill 与消息里的证据 chip 点击弹出审批（演示 Sandbox 卡片按钮）
+document.querySelectorAll('.mode-pill').forEach(p=>p.addEventListener('click',()=>{document.querySelectorAll('.mode-pill').forEach(x=>x.classList.remove('on'));p.classList.add('on')}));
+document.querySelector('.cap-card:last-child .tag.ok')?.addEventListener('click',()=>show('approval'));
+
+// ===== 智能问数板块（静态演示，作用域独立，不依赖主题切换） =====
+(function(){
+  const $=(id)=>document.getElementById(id);
+  const DATA=[
+    {label:"无线键盘",value:128},
+    {label:"无线鼠标",value:96},
+    {label:"USB 集线器",value:74},
+    {label:"显示器支架",value:51},
+    {label:"网线",value:23}
+  ];
+  const COLORS=["#185fa5","#3d8fd1","#6fb3e0","#9d8cff","#8fd1b5"];
+  const SQL="SELECT good_name, SUM(num) AS total_num\nFROM biz_order_goods\nWHERE status <> 'cancelled'\nGROUP BY good_name\nORDER BY total_num DESC\nLIMIT 5;";
+  const W=640,H=230,BASE=200,BAR_W=36;
+
+  $("dq-sqlBlock").innerHTML=SQL
+    .replace(/(SELECT|FROM|WHERE|GROUP BY|ORDER BY|LIMIT|AS)/g,'<span class="kw">$1</span>')
+    .replace(/(SUM|COUNT|AVG)/g,'<span class="fn">$1</span>')
+    .replace(/\b(5)\b/g,'<span class="num">$1</span>');
+
+  $("dq-resultBody").innerHTML=DATA.map(d=>`<tr><td>${d.label}</td><td>${d.value}</td></tr>`).join("");
+
+  $("dq-queryList").innerHTML=[
+    {q:"销量前五的商品是哪些？",status:"已完成",running:false},
+    {q:"上月各渠道订单金额分布？",status:"已完成",running:false},
+    {q:"退货率最高的三个 SKU？",status:"执行中",running:true}
+  ].map((item,i)=>`<button type="button" class="${i===0?'active':''}">
+        <strong>${item.q}</strong>
+        <small><span class="dot ${item.running?'running':''}"></span>${item.status}</small>
+      </button>`).join("");
+
+  function renderChart(mode){
+    const svg=$("dq-chartSvg"),labels=$("dq-chartLabels");
+    const max=Math.max(...DATA.map(d=>d.value),1);
+    const slot=W/DATA.length;
+    let html="";
+    if(mode==="bar"){
+      DATA.forEach((d,i)=>{
+        const h=Math.max((d.value/max)*(BASE-20),2);
+        const x=i*slot+(slot-BAR_W)/2;
+        html+=`<rect class="bar" x="${x}" y="${BASE-h}" width="${BAR_W}" height="${h}" rx="3"></rect>`;
+        html+=`<text class="value-label" x="${x+BAR_W/2}" y="${BASE-h-6}" text-anchor="middle">${d.value}</text>`;
+        html+=`<text class="axis-label" x="${i*slot+slot/2}" y="${BASE+16}" text-anchor="middle">${i+1}</text>`;
+      });
+      html+=`<line x1="0" y1="${BASE}" x2="${W}" y2="${BASE}" stroke="rgba(255,255,255,0.25)" stroke-width="1"></line>`;
+    }else if(mode==="line"){
+      const pts=DATA.map((d,i)=>[i*slot+slot/2,BASE-(d.value/max)*(BASE-20)]);
+      html+=`<polyline class="line" points="${pts.map(p=>p.join(",")).join(" ")}"></polyline>`;
+      pts.forEach((p,i)=>{
+        html+=`<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${COLORS[i%COLORS.length]}"></circle>`;
+        html+=`<text class="value-label" x="${p[0]}" y="${p[1]-10}" text-anchor="middle">${DATA[i].value}</text>`;
+      });
+    }else if(mode==="pie"){
+      const total=DATA.reduce((s,d)=>s+d.value,0);
+      const cx=W/2,cy=115,r=88;
+      let angle=-Math.PI/2;
+      DATA.forEach((d,i)=>{
+        const sweep=(d.value/total)*Math.PI*2;
+        const end=angle+sweep;
+        const x1=cx+r*Math.cos(angle),y1=cy+r*Math.sin(angle);
+        const x2=cx+r*Math.cos(end),y2=cy+r*Math.sin(end);
+        const large=sweep>Math.PI?1:0;
+        html+=`<path class="pie-slice" d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${COLORS[i%COLORS.length]}"></path>`;
+        const mid=angle+sweep/2;
+        const pct=Math.round((d.value/total)*100);
+        if(pct>=8){html+=`<text class="value-label" x="${cx+(r+18)*Math.cos(mid)}" y="${cy+(r+18)*Math.sin(mid)+4}" text-anchor="middle">${pct}%</text>`;}
+        angle=end;
+      });
+    }
+    svg.innerHTML=html;
+    labels.innerHTML=mode==="none"?"":DATA.map((d,i)=>
+      `<span class="chart-label"><span class="legend-dot" style="background:${mode==="bar"?"#3d8fd1":COLORS[i%COLORS.length]}"></span>${d.label}：${d.value}</span>`
+    ).join("");
+    $("dq-chartBox").style.display=mode==="none"?"none":"block";
+  }
+
+  const select=$("dq-chartSelect");
+  select.addEventListener("change",()=>renderChart(select.value));
+  renderChart("bar");
+
+  $("dq-copyBtn").addEventListener("click",async()=>{
+    try{
+      await navigator.clipboard.writeText(SQL);
+      const tip=$("dq-copiedTip");
+      tip.style.display="inline";
+      setTimeout(()=>tip.style.display="none",1500);
+    }catch(e){/* 预览环境无剪贴板权限时忽略 */}
+  });
+
+  $("dq-analysisBtn").addEventListener("click",()=>{
+    const btn=$("dq-analysisBtn");
+    if(btn.dataset.done)return;
+    btn.disabled=true;
+    btn.textContent="生成中…";
+    setTimeout(()=>{
+      $("dq-analysisHint").style.display="none";
+      const text=$("dq-analysisText");
+      text.style.display="block";
+      text.textContent=
+        "关键发现：无线键盘以 128 件居首，比第二名无线鼠标（96 件）高 33%，前两名合计占比 42.1%。"+
+        "长尾明显——第五名网线（23 件）仅为头部的 18%。\n"+
+        "建议：对无线键盘、无线鼠标维持安全库存并绑定推荐位；USB 集线器与显示器支架可搭配键鼠做组合促销；"+
+        "网线属低价值补充品类，按需补货即可。\n"+
+        "口径说明：结果已排除取消订单，共 5 行，受 LIMIT 5 约束。";
+      btn.textContent="已生成";
+      btn.dataset.done="1";
+    },1200);
+  });
+})();
+</script>
+</body>
+</html>

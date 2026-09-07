@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zhiyuan.local/contracts/research_api_v1.json",
+  "title": "ZhiYuan Research API v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1}
+  },
+  "$defs": {
+    "mode": {"type": "string", "enum": ["quick", "standard", "deep"]},
+    "projectLifecycle": {"type": "string", "enum": ["draft", "awaiting_approval", "frozen"]},
+    "planJobStatus": {"type": "string", "enum": ["pending", "running", "cancelling", "cancelled", "completed", "failed"]},
+    "planStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step_key", "title", "question", "sources"],
+      "properties": {
+        "step_key": {"type": "string", "minLength": 1, "maxLength": 96},
+        "title": {"type": "string", "minLength": 1, "maxLength": 300},
+        "question": {"type": "string", "minLength": 1, "maxLength": 2000},
+        "sources": {"type": "array", "items": {"type": "string", "enum": ["knowledge_base", "web", "attachments"]}, "uniqueItems": true}
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "project_id", "version", "objective", "steps", "created_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^rplan_[a-f0-9]{32}$"},
+        "project_id": {"type": "string", "pattern": "^rproj_[a-f0-9]{32}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "objective": {"type": "string"},
+        "steps": {"type": "array", "items": {"$ref": "#/$defs/planStep"}},
+        "created_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "markdownArtifactEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["markdown", "rebuild_pdf"],
+      "properties": {
+        "markdown": {"type": "string", "minLength": 1, "maxLength": 2000000},
+        "rebuild_pdf": {"type": "boolean", "default": true}
+      }
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "thread_id", "title", "objective", "mode", "lifecycle_status", "version", "run_status", "latest_run_id", "created_at", "updated_at"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^rproj_[a-f0-9]{32}$"},
+        "thread_id": {"type": "string"},
+        "title": {"type": "string"},
+        "objective": {"type": "string"},
+        "mode": {"$ref": "#/$defs/mode"},
+        "lifecycle_status": {"$ref": "#/$defs/projectLifecycle"},
+        "version": {"type": "integer", "minimum": 1},
+        "run_status": {"type": ["string", "null"]},
+        "latest_run_id": {"type": ["string", "null"]},
+        "created_at": {"type": "string", "format": "date-time"},
+        "updated_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}
