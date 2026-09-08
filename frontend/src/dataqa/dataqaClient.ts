@@ -20,6 +20,9 @@ export interface DataQaChart {
   chart_type: DataQaChartType;
   label_field: string;
   value_field: string;
+  title?: string;
+  source?: 'rules' | 'llm';
+  recommendation_error?: string | null;
 }
 
 export interface DataQaResult {

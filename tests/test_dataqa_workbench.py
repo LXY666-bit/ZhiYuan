@@ -476,6 +476,49 @@ def test_infer_chart_rules():
     assert too_many_rows["chart_type"] == "none"
 
 
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        {
+            "chart_type": "bar",
+            "label_field": "good_name",
+            "value_field": "total_num",
+            "title": "销量",
+        },
+        {"chart_type": "bar", "label_field": "invented", "value_field": "total_num"},
+        "invalid suggestion",
+    ],
+)
+def test_chart_suggestions_are_validated_and_persisted_without_failing_query(
+    session_factory, proposal
+):
+    repository = DataQaRepository(session_factory)
+    record = repository.create_query(
+        username="alice",
+        tenant_id="default",
+        question="销量前五的商品是哪些？",
+        idempotency_key="chart-suggestion",
+        model_snapshot=_snapshot(),
+    )
+    decision = _decision().model_copy(update={"chart": proposal})
+    _run_once(
+        repository,
+        session_factory,
+        record,
+        model=_FakeModel(decision),
+        runtime=_FakeRuntime(),
+    )
+    saved = repository.get_query(
+        username="alice", tenant_id="default", query_id=record.query.id
+    )
+    assert saved.status == "completed"
+    assert saved.result is not None
+    assert saved.result.rows == [["无线键盘", 128], ["无线鼠标", 96]]
+    valid = isinstance(proposal, dict) and proposal.get("label_field") == "good_name"
+    assert saved.result.chart.source == ("llm" if valid else "rules")
+    assert bool(saved.result.chart.recommendation_error) is not valid
+
+
 def test_build_content_mentions_blocks():
     content = build_content(
         "问题",

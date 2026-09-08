@@ -36,6 +36,19 @@ class DataQaChartV1(BaseModel):
     chart_type: DataQaChartType = "none"
     label_field: str = ""
     value_field: str = ""
+    title: str = ""
+    source: Literal["rules", "llm"] = "rules"
+    recommendation_error: str | None = None
+
+
+class DataQaChartSuggestion(BaseModel):
+    """Untrusted display-only proposal, validated against the actual result."""
+
+    model_config = {"extra": "forbid"}
+    chart_type: Literal["bar", "line", "pie"]
+    label_field: str = Field(min_length=1, max_length=128)
+    value_field: str = Field(min_length=1, max_length=128)
+    title: str = Field(default="", max_length=120)
 
 
 class DataQaResultV1(BaseModel):
@@ -68,9 +81,13 @@ class DataQaQueryListResponse(BaseModel):
 
 
 class DataQaGroundedSqlDecision(BaseModel):
-    """LLM only supplies SQL; candidate rationale is deterministic and persisted."""
+    """SQL plus an optional proposal; malformed display advice must not fail SQL."""
 
     sql: str
+    chart: Any = Field(
+        default=None,
+        description="Optional chart proposal: chart_type, label_field, value_field, title. Never include data or code.",
+    )
 
 
 class DataQaSemanticMetadataRequest(BaseModel):
@@ -105,6 +122,7 @@ class DataQaSemanticSchemaResponse(BaseModel):
 __all__ = [
     "DataQaAnalysisRequest",
     "DataQaChartV1",
+    "DataQaChartSuggestion",
     "DataQaChartType",
     "DataQaFieldRationaleV1",
     "DataQaGroundedSqlDecision",

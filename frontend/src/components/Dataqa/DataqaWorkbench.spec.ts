@@ -84,7 +84,7 @@ describe('DataqaWorkbench', () => {
     app.mount(root);
     await nextTick();
 
-    expect(root.querySelectorAll('.bar')).toHaveLength(3);
+    expect(root.querySelectorAll('.line')).toHaveLength(1);
     expect(root.querySelector('.chart-empty')).toBeNull();
     expect(root.querySelector('.analysis-text strong')?.textContent).toBe('关键发现');
     expect(root.querySelector('.analysis-text table')).not.toBeNull();
@@ -97,6 +97,39 @@ describe('DataqaWorkbench', () => {
 
     expect(root.querySelectorAll('.pie-percent')).toHaveLength(3);
     expect(root.textContent).toContain('41%');
+  });
+
+  it('switches metrics on a multi-column result while preserving the table', async () => {
+    const current = query();
+    current.result!.columns = ['region', 'sales', 'orders'];
+    current.result!.rows = [
+      ['East', '1234.50', 5],
+      ['West', '-200.00', 3],
+    ];
+    current.result!.row_count = 2;
+    current.result!.chart = {
+      chart_type: 'bar',
+      label_field: 'region',
+      value_field: 'sales',
+      recommendation_error: 'DATAQA_CHART_SUGGESTION_REJECTED',
+    };
+    dataQaStore.current = storeFor(current);
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    app = createApp(DataqaWorkbench);
+    app.mount(root);
+    await nextTick();
+    expect(root.querySelectorAll('.bar')).toHaveLength(2);
+    expect(root.textContent).toContain('已使用规则推荐');
+    const tableBefore = root.querySelector('.result-table')?.textContent;
+    expect(tableBefore).toContain('1,234.50');
+    const metric = root.querySelector<HTMLSelectElement>('[aria-label="图表指标"]')!;
+    metric.value = 'orders';
+    metric.dispatchEvent(new Event('change'));
+    await nextTick();
+    expect(root.querySelector('.chart-title')?.textContent).toBe('region · orders');
+    expect(root.querySelector('.chart-labels')?.textContent).toContain('East：5');
+    expect(root.querySelector('.result-table')?.textContent).toBe(tableBefore);
   });
 
   it('falls back to selection copying when the Clipboard API is unavailable', async () => {

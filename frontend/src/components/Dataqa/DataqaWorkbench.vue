@@ -109,6 +109,13 @@
               </select>
             </div>
             <div v-if="chartType !== 'none' && chartPoints.length" class="chart-box">
+              <p class="chart-title">
+                {{
+                  labelChoice || metricChoice
+                    ? `${labelField} · ${metricField}`
+                    : result.chart.title || `${labelField} · ${metricField}`
+                }}
+              </p>
               <svg
                 :viewBox="`0 0 ${CHART_W} ${CHART_H}`"
                 class="chart-svg"
@@ -116,13 +123,13 @@
                 aria-label="查询结果图表"
               >
                 <g v-if="chartType === 'bar'">
-                  <line class="chart-axis" x1="0" :y1="CHART_BASE" :x2="CHART_W" :y2="CHART_BASE" />
+                  <line class="chart-axis" x1="0" :y1="scale.zero" :x2="CHART_W" :y2="scale.zero" />
                   <rect
                     v-for="(point, index) in chartPoints"
                     :key="`bar-${index}`"
                     :x="barX(index)"
-                    :y="CHART_BASE - point.height"
-                    :width="BAR_W"
+                    :y="point.top"
+                    :width="barWidth"
                     :height="point.height"
                     rx="3"
                     class="bar"
@@ -131,21 +138,22 @@
                     v-for="(point, index) in chartPoints"
                     :key="`bar-value-${index}`"
                     class="value-label"
-                    :x="barX(index) + BAR_W / 2"
-                    :y="Math.max(CHART_BASE - point.height - 7, 12)"
+                    :x="barX(index) + barWidth / 2"
+                    :y="Math.max(point.top - 7, 12)"
                     text-anchor="middle"
                   >
                     {{ formatChartValue(point.value) }}
                   </text>
                   <text
-                    v-for="(_point, index) in chartPoints"
+                    v-for="(point, index) in chartPoints"
+                    v-show="index % Math.ceil(chartPoints.length / 12) === 0"
                     :key="`bar-axis-${index}`"
                     class="axis-label"
-                    :x="barX(index) + BAR_W / 2"
+                    :x="barX(index) + barWidth / 2"
                     :y="CHART_BASE + 16"
                     text-anchor="middle"
                   >
-                    {{ index + 1 }}
+                    {{ point.label.length > 10 ? `${point.label.slice(0, 10)}…` : point.label }}
                   </text>
                 </g>
                 <g v-if="chartType === 'line'">
@@ -153,14 +161,14 @@
                   <g v-for="(point, index) in chartPoints" :key="`line-point-${index}`">
                     <circle
                       :cx="linePointX(index)"
-                      :cy="CHART_BASE - point.height"
+                      :cy="point.y"
                       r="4"
                       :fill="PIE_COLORS[index % PIE_COLORS.length]"
                     />
                     <text
                       class="value-label"
                       :x="linePointX(index)"
-                      :y="Math.max(CHART_BASE - point.height - 9, 12)"
+                      :y="Math.max(point.y - 9, 12)"
                       text-anchor="middle"
                     >
                       {{ formatChartValue(point.value) }}
@@ -206,7 +214,50 @@
                 </span>
               </div>
             </div>
-            <p v-else class="chart-empty">当前结果形状不适合自动图表。</p>
+            <p v-else-if="chartType !== 'none'" class="chart-empty">
+              当前选择无法绘图：需要 2～60 条完整数据、唯一维度和数值指标。饼图最多 12
+              类且数值须非负、总和大于零。
+            </p>
+
+            <div class="chart-controls">
+              <label
+                >维度
+                <select
+                  :value="labelField"
+                  aria-label="图表维度"
+                  @change="labelChoice = ($event.target as HTMLSelectElement).value"
+                >
+                  <option v-for="field in fields.dimensions" :key="field" :value="field">
+                    {{ field }}
+                  </option>
+                </select>
+              </label>
+              <label
+                >指标
+                <select
+                  :value="metricField"
+                  aria-label="图表指标"
+                  @change="metricChoice = ($event.target as HTMLSelectElement).value"
+                >
+                  <option v-for="field in metricOptions" :key="field" :value="field">
+                    {{ field }}
+                  </option>
+                </select>
+              </label>
+              <span class="muted">{{
+                labelChoice || metricChoice || chartMode !== 'auto'
+                  ? '手动选择'
+                  : result.chart.source === 'llm'
+                    ? 'AI 建议 · 已校验'
+                    : '规则推荐'
+              }}</span>
+            </div>
+            <p v-if="result.chart.recommendation_error" class="muted">
+              AI 图表建议未通过校验，已使用规则推荐，查询数据不受影响。
+            </p>
+            <p v-if="result.truncated" class="muted">
+              结果已达到返回上限；图表仅展示返回数据，不能代表完整总体。
+            </p>
 
             <!-- 区块五：查询结果表格 -->
             <div class="block-heading">
@@ -225,7 +276,7 @@
                 <tbody>
                   <tr v-for="(row, rowIndex) in result.rows" :key="rowIndex">
                     <td v-for="(cell, cellIndex) in row" :key="cellIndex">
-                      {{ formatCell(cell) }}
+                      {{ formatCell(cell, numericColumns[cellIndex]) }}
                     </td>
                   </tr>
                 </tbody>
@@ -261,9 +312,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useDataQaStore } from '@/stores/dataqa';
 import type { DataQaChartType } from '@/dataqa/dataqaClient';
 import { parseMarkdown } from '@/utils/markdown';
+import { chartFields, chartData, formatCell, toFiniteNumber } from '@/dataqa/charts';
 
 const store = useDataQaStore();
 const chartMode = ref<'auto' | DataQaChartType>('auto');
+const labelChoice = ref('');
+const metricChoice = ref('');
 const copied = ref(false);
 let copiedResetTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -291,44 +345,74 @@ const statusLabel = computed(() => {
   return map[selected.value?.status ?? ''] ?? selected.value?.status ?? '';
 });
 
-interface ChartPoint {
-  label: string;
-  value: number;
-  height: number;
-}
-
-const chartPoints = computed<ChartPoint[]>(() => {
-  if (!result.value) return [];
-  const { chart, columns, rows } = result.value;
-  if (columns.length !== 2) return [];
-  const labelIndex = chart.label_field ? columns.indexOf(chart.label_field) : 0;
-  const valueIndex = chart.value_field ? columns.indexOf(chart.value_field) : 1;
-  if (labelIndex < 0 || valueIndex < 0) return [];
-  const numeric = rows.flatMap((row) => {
-    const value = toFiniteNumber(row[valueIndex]);
-    return value === null ? [] : [{ label: String(row[labelIndex] ?? ''), value }];
-  });
-  if (!numeric.length) return [];
-  const max = Math.max(...numeric.map((point) => point.value), 1);
-  return numeric.map((point) => ({
-    ...point,
-    height: Math.max((point.value / max) * (CHART_BASE - 20), 2),
-  }));
+const fields = computed(() => chartFields(result.value?.columns ?? [], result.value?.rows ?? []));
+const labelField = computed(() => {
+  const options = fields.value.dimensions;
+  if (options.includes(labelChoice.value)) return labelChoice.value;
+  if (options.includes(result.value?.chart.label_field ?? ''))
+    return result.value!.chart.label_field;
+  return (
+    fields.value.dates.find((name) => options.includes(name)) ??
+    options.find((name) => !fields.value.metrics.includes(name)) ??
+    options[0] ??
+    ''
+  );
 });
-
-const autoChartEligible = computed(
-  () => chartPoints.value.length >= 2 && chartPoints.value.length <= 60
+const metricOptions = computed(() =>
+  fields.value.metrics.filter((name) => name !== labelField.value)
 );
-
+const metricField = computed(() => {
+  if (metricOptions.value.includes(metricChoice.value)) return metricChoice.value;
+  if (metricOptions.value.includes(result.value?.chart.value_field ?? ''))
+    return result.value!.chart.value_field;
+  return metricOptions.value[0] ?? '';
+});
 const chartType = computed<DataQaChartType>(() => {
   if (chartMode.value !== 'auto') return chartMode.value;
-  const inferred = result.value?.chart.chart_type ?? 'none';
-  return inferred === 'none' && autoChartEligible.value ? 'bar' : inferred;
+  if (!labelChoice.value && !metricChoice.value && result.value?.chart.source === 'llm')
+    return result.value.chart.chart_type;
+  return fields.value.dates.includes(labelField.value) ? 'line' : 'bar';
 });
+const rawPoints = computed(() =>
+  chartData(
+    result.value?.columns ?? [],
+    result.value?.rows ?? [],
+    labelField.value,
+    metricField.value,
+    chartType.value
+  )
+);
+const scale = computed(() => {
+  const min = Math.min(0, ...rawPoints.value.map((point) => point.value));
+  const max = Math.max(0, ...rawPoints.value.map((point) => point.value));
+  const range = max - min || 1;
+  return {
+    zero: 20 + (max / range) * 180,
+    y: (value: number) => 20 + ((max - value) / range) * 180,
+  };
+});
+const chartPoints = computed(() =>
+  rawPoints.value.map((point) => ({
+    ...point,
+    y: scale.value.y(point.value),
+    top: Math.min(scale.value.y(point.value), scale.value.zero),
+    height: Math.abs(scale.value.y(point.value) - scale.value.zero),
+  }))
+);
+const barWidth = computed(() =>
+  Math.min(BAR_W, (CHART_W / Math.max(chartPoints.value.length, 1)) * 0.7)
+);
+const numericColumns = computed(
+  () =>
+    result.value?.columns.map((_, index) => {
+      const values = result.value!.rows.map((row) => row[index]).filter((value) => value !== null);
+      return values.length > 0 && values.every((value) => toFiniteNumber(value) !== null);
+    }) ?? []
+);
 
 const barX = (index: number) => {
   const slot = CHART_W / chartPoints.value.length;
-  return index * slot + (slot - BAR_W) / 2;
+  return index * slot + (slot - barWidth.value) / 2;
 };
 
 const linePoints = computed(() =>
@@ -336,7 +420,7 @@ const linePoints = computed(() =>
     .map((point, index) => {
       const slot = CHART_W / chartPoints.value.length;
       const x = index * slot + slot / 2;
-      return `${x},${CHART_BASE - point.height}`;
+      return `${x},${point.y}`;
     })
     .join(' ')
 );
@@ -347,14 +431,14 @@ const linePointX = (index: number) => {
 };
 
 const pieArcs = computed(() => {
-  const total = chartPoints.value.reduce((sum, point) => sum + Math.abs(point.value), 0);
+  const total = chartPoints.value.reduce((sum, point) => sum + point.value, 0);
   if (total <= 0) return [];
   const cx = CHART_W / 2;
   const cy = 110;
   const r = 90;
   let angle = -Math.PI / 2;
   return chartPoints.value.map((point) => {
-    const sweep = (Math.abs(point.value) / total) * Math.PI * 2;
+    const sweep = (point.value / total) * Math.PI * 2;
     const end = angle + sweep;
     const x1 = cx + r * Math.cos(angle);
     const y1 = cy + r * Math.sin(angle);
@@ -365,28 +449,16 @@ const pieArcs = computed(() => {
     const labelRadius = r + 18;
     angle = end;
     return {
-      path: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`,
-      percentage: Math.round((Math.abs(point.value) / total) * 100),
+      path:
+        sweep >= Math.PI * 2 - 1e-10
+          ? `M ${cx} ${cy - r} A ${r} ${r} 0 1 1 ${cx} ${cy + r} A ${r} ${r} 0 1 1 ${cx} ${cy - r} Z`
+          : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`,
+      percentage: Math.round((point.value / total) * 100),
       labelX: cx + labelRadius * Math.cos(midpoint),
       labelY: cy + labelRadius * Math.sin(midpoint) + 4,
     };
   });
 });
-
-const formatCell = (cell: unknown) => {
-  if (cell === null || cell === undefined) return '';
-  if (typeof cell === 'boolean') return cell ? 'true' : 'false';
-  if (typeof cell === 'number') return String(cell);
-  if (typeof cell === 'object') return JSON.stringify(cell);
-  return String(cell);
-};
-
-const toFiniteNumber = (value: unknown): number | null => {
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value !== 'string' || !value.trim()) return null;
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
-};
 
 const formatChartValue = (value: number) =>
   new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value);
@@ -443,6 +515,8 @@ watch(
   () => selected.value?.id,
   () => {
     chartMode.value = 'auto';
+    labelChoice.value = '';
+    metricChoice.value = '';
   }
 );
 
@@ -454,6 +528,29 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0;
+}
+.chart-controls label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.chart-controls select {
+  max-width: 220px;
+  padding: 6px;
+  color: inherit;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.chart-title {
+  font-weight: 600;
+}
 .dataqa-workbench {
   width: 100%;
   height: 100%;
