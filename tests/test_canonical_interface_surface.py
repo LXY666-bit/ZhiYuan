@@ -37,6 +37,8 @@ def test_application_exposes_only_canonical_interfaces() -> None:
         "/v1/dataqa/queries",
         "/v1/dataqa/queries/{query_id}",
         "/v1/dataqa/queries/{query_id}/analysis",
+        "/v1/dataqa/semantic-schema",
+        "/v1/dataqa/semantic-schema/metadata",
         "/v1/models",
         "/v1/models/assignments/{role}",
         "/v1/models/{profile_id}",
