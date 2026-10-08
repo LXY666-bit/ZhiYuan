@@ -58,7 +58,7 @@ const state = vi.hoisted(() => ({
     },
     planJob: null,
     evidence: [] as ResearchResource[],
-    claims: [],
+    claims: [] as ResearchResource[],
     steps: [] as ResearchStepResource[],
     sections: [] as ResearchResource[],
     artifacts: [] as ResearchResource[],
@@ -101,6 +101,80 @@ vi.mock('@/artifacts/artifactClient', () => ({
 describe('ResearchWorkbench', () => {
   let app: App<Element> | null = null;
   let root: HTMLDivElement | null = null;
+
+  it('discloses degraded delivery after a canonical completed event', async () => {
+    const runId = 'run_degraded';
+    state.research.selected.latest_run_id = runId;
+    state.research.sections = [
+      { id: 'section', title: '结论', status: 'degraded', content_markdown: '仍需核验' },
+    ];
+    state.runs.byId = {
+      [runId]: { status: 'completed', hasGap: false, warnings: [], usage: {}, activeDurationMs: 0 },
+    };
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    app = createApp(ResearchWorkbench);
+    app.mount(root);
+    await nextTick();
+    expect(root.querySelector('.run-phase')?.textContent).toContain('部分内容降级');
+    expect(root.querySelector('.run-phase')?.textContent).toContain('交付完成不代表全部事实已验证');
+  });
+
+  it('blocks approval while the displayed plan has unsaved edits', async () => {
+    state.research.selected.lifecycle_status = 'awaiting_approval';
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    app = createApp(ResearchWorkbench);
+    app.mount(root);
+    await nextTick();
+    const approve = [...root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('批准并开始研究')
+    );
+    expect(approve?.disabled).toBe(false);
+    const input = root.querySelector<HTMLInputElement>('[aria-label="步骤标题"]');
+    input!.value = '新的研究范围';
+    input!.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    expect(approve?.disabled).toBe(true);
+    expect(root.textContent).toContain('计划有未保存修改');
+    approve?.click();
+    expect(state.research.approve).not.toHaveBeenCalled();
+  });
+
+  it('opens persisted evidence from a chapter citation without rendering source HTML', async () => {
+    state.research.sections = [
+      {
+        id: 'section',
+        title: '成本',
+        status: 'completed',
+        content_markdown: '每月成本为 500 元 [E1]。',
+      },
+    ];
+    state.research.evidence = [
+      {
+        id: 'evidence',
+        citation: 'E1',
+        title: '官方价格',
+        content: '<script>alert(1)</script>每月 500 元。',
+        source_uri: 'https://example.com/pricing',
+      },
+    ];
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    app = createApp(ResearchWorkbench);
+    app.mount(root);
+    await nextTick();
+    const citation = root.querySelector<HTMLButtonElement>('[data-citation="E1"]');
+    expect(citation).not.toBeNull();
+    citation?.click();
+    await nextTick();
+    expect(root.querySelector('.citation-detail')?.textContent).toContain('官方价格');
+    expect(root.querySelector('.citation-detail')?.textContent).toContain('每月 500 元');
+    expect(root.querySelector('.citation-detail script')).toBeNull();
+    expect(root.querySelector('.citation-detail a')?.getAttribute('href')).toBe(
+      'https://example.com/pricing'
+    );
+  });
 
   afterEach(() => {
     app?.unmount();
@@ -157,6 +231,7 @@ describe('ResearchWorkbench', () => {
       model_calls: 3,
       duration_ms: 9600,
       elapsed_ms: 12000,
+      run_budget_seconds: 300,
     };
     state.research.evidence = [
       {
@@ -187,6 +262,8 @@ describe('ResearchWorkbench', () => {
     expect(root.querySelector('.run-card')?.textContent).toContain('运行耗时');
     expect(root.querySelector('.run-card')?.textContent).toContain('12 秒');
     expect(root.querySelector('.run-card')?.textContent).toContain('1250 / 460');
+    expect(root.querySelector('.run-budget-note')?.textContent).toContain('5 分 00 秒');
+    expect(root.querySelector('.run-budget-note')?.textContent).toContain('可提前阅读');
     expect(root.querySelector('.run-step-copy')?.textContent).toContain('4 条证据');
     expect(root.querySelector('.run-step-copy')?.textContent).toContain('已完成');
 
@@ -348,6 +425,51 @@ describe('ResearchWorkbench', () => {
     await nextTick();
     expect(document.body.querySelector('.report-preview-dialog')).toBeNull();
     expect(document.activeElement).toBe(expand);
+  });
+
+  it('reads the saved report and returns from citations without creating a revision', async () => {
+    state.research.artifacts = [
+      {
+        id: 'art_read',
+        filename: 'report.md',
+        media_type: 'text/markdown',
+        state: 'final',
+        version: 1,
+        download_url: '/api/artifacts/art_read',
+      },
+    ];
+    state.research.evidence = [
+      { id: 'evidence', citation: 'E1', title: '原始材料', content: '原文内容' },
+    ];
+    state.research.reviseMarkdown.mockClear();
+    vi.mocked(fetchArtifact).mockResolvedValueOnce({
+      text: async () => '# 报告\n\n已保存结论 [E1]。',
+    } as Blob);
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    app = createApp(ResearchWorkbench);
+    app.mount(root);
+    await nextTick();
+    const read = [...root.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === '阅读报告'
+    );
+    expect(read).toBeDefined();
+    read?.click();
+    await vi.waitFor(() =>
+      expect(document.body.querySelector('.report-preview-dialog h1')?.textContent).toBe('报告')
+    );
+    const dialog = document.body.querySelector('.report-preview-dialog');
+    expect(dialog?.textContent).not.toContain('导出 PDF');
+    dialog?.querySelector<HTMLButtonElement>('[data-citation="E1"]')?.click();
+    await nextTick();
+    expect(root.querySelector('.citation-detail')?.textContent).toContain('原文内容');
+    expect(document.body.querySelector('.report-preview-dialog')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.citation-detail button')?.click();
+    await nextTick();
+    await nextTick();
+    expect(document.body.querySelector('.report-preview-dialog')).not.toBeNull();
+    expect(document.activeElement?.getAttribute('data-citation')).toBe('E1');
+    expect(state.research.reviseMarkdown).not.toHaveBeenCalled();
   });
 
   it('confirms and deletes an individual research artifact', async () => {

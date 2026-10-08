@@ -44,6 +44,7 @@ const DEFAULT_MESSAGES: Record<string, string> = {
   RESEARCH_ATTACHMENTS_NO_EVIDENCE: '研究附件未找到与本步骤匹配的证据',
   RESEARCH_ATTACHMENTS_EVIDENCE_FILTERED: '研究附件候选内容与研究目标不匹配，未保留证据',
   RESEARCH_RETRIEVAL_DEGRADED: '研究检索处理失败，本步骤已降级交付',
+  RESEARCH_OUTPUT_LIMIT: '模型输出达到本阶段上限，已保留此前结果，请核验缺口',
   WEB_TOOL_RESULT_CONTEXT_BUDGET_EXCEEDED: '搜索结果超过上下文预算，请缩小搜索范围后重试',
   POLICY_DENIED: '当前操作被安全策略拒绝',
   TOOL_POLICY_DENIED: '当前工具不在本次运行的可用范围内',

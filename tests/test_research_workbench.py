@@ -22,6 +22,8 @@ from backend.db.models import (
     ResearchStep,
     ResearchPlanJob,
     ResearchUsage,
+    ResearchClaimEvidence,
+    RunEvent,
     Run,
     RunCheckpoint,
     Thread,
@@ -45,7 +47,7 @@ from backend.research.query_policy import (
 )
 from backend.research.repository import ResearchRepository
 from backend.research.source_quality import rank_web_evidence
-from backend.research.workflow import ResearchWorkflowRunner
+from backend.research.workflow import ResearchWorkflowRunner, ResearchWorkflowStore
 from backend.runs.repository import RunRepository
 from backend.threads.repository import ThreadRepository
 from backend.web_research.runtime import build_web_research_runtime
@@ -447,6 +449,7 @@ def test_run_metrics_and_steps_are_scoped_to_the_selected_research_run(session_f
             "position": 1,
             "status": "completed",
             "evidence_count": 3,
+            "phase": None,
             "evidence_ids": ["rev_1", "rev_2", "rev_3"],
             "source_stats": {},
             "started_at": f"{(now - timedelta(seconds=4)).isoformat()}Z",
@@ -461,6 +464,7 @@ def test_run_metrics_and_steps_are_scoped_to_the_selected_research_run(session_f
     assert metrics["model_calls"] == 1
     assert metrics["duration_ms"] == 3200
     assert metrics["elapsed_ms"] >= 4000
+    assert metrics["run_budget_seconds"] == 90
 
 
 def test_artifact_draft_is_atomic_singleton_and_download_is_owned(session_factory):
@@ -798,7 +802,7 @@ def test_attachment_retrieval_uses_full_frozen_scope_filter():
             captured["collection"] = collection
             return self
 
-        def dense_retrieve(self, _vector, *, top_k, filter_expr):
+        def dense_retrieve(self, _vector, *, top_k, filter_expr, timeout=None):
             captured["top_k"] = top_k
             captured["filter"] = filter_expr
             return []
@@ -923,12 +927,17 @@ def test_profiles_keep_fixed_budgets_and_concurrency():
         quick["model_timeout_seconds"],
         standard["model_timeout_seconds"],
         deep["model_timeout_seconds"],
-    ) == (180, 360, 720)
+    ) == (45, 60, 90)
     assert (
         quick["writing_budget_seconds"],
         standard["writing_budget_seconds"],
         deep["writing_budget_seconds"],
-    ) == (360, 600, 1200)
+    ) == (60, 120, 180)
+    assert (
+        quick["run_budget_seconds"],
+        standard["run_budget_seconds"],
+        deep["run_budget_seconds"],
+    ) == (90, 180, 300)
     assert (quick["max_rounds"], standard["max_rounds"], deep["max_rounds"]) == (
         1,
         2,
@@ -937,7 +946,11 @@ def test_profiles_keep_fixed_budgets_and_concurrency():
     assert "web_search_depth" not in quick
     assert "web_authentication" not in quick
     with patch("backend.research.workflow.time.monotonic", return_value=10.0):
-        assert ResearchWorkflowRunner._model_deadline(500, standard) == 370.0
+        assert ResearchWorkflowRunner._model_deadline(500, standard) == 70.0
+        assert (
+            ResearchWorkflowRunner._model_deadline(500, {**deep, "run_deadline": 15.0})
+            == 15.0
+        )
 
 
 @pytest.mark.asyncio
@@ -1025,7 +1038,7 @@ def test_planner_turns_generic_repeated_questions_into_distinct_search_direction
     generic = "研究对象：PostgreSQL pgvector、Milvus 和 Qdrant"
 
     class Model:
-        def with_structured_output(self, _schema):
+        def with_structured_output(self, _schema, *, method):
             return self
 
         def invoke(self, _messages):
@@ -1086,7 +1099,7 @@ def test_planner_turns_generic_repeated_questions_into_distinct_search_direction
 
 def test_generated_plan_applies_every_selected_source_to_every_step():
     class Model:
-        def with_structured_output(self, _schema):
+        def with_structured_output(self, _schema, *, method):
             return self
 
         def invoke(self, _messages):
@@ -1134,38 +1147,52 @@ def test_generated_plan_applies_every_selected_source_to_every_step():
 
 
 @pytest.mark.asyncio
-async def test_knowledge_retrieval_runs_in_worker_without_an_event_loop(monkeypatch):
-    from backend.rag import pipeline
+async def test_knowledge_retrieval_reuses_recall_without_running_full_rag_graph(
+    monkeypatch,
+):
+    import backend.rag.utils as rag_utils
+    import backend.rag.pipeline as pipeline
 
-    class Graph:
-        def invoke(self, _state):
-            return {
-                "docs": [
-                    {
-                        "content": "采购标准证据",
-                        "metadata": {"chunk_id": "chunk-1", "filename": "标准.pdf"},
-                    }
-                ]
-            }
+    captured = {}
 
-    monkeypatch.setattr(pipeline, "checkpointless_rag_graph", Graph())
-    snapshot = SimpleNamespace(
-        username="alice",
-        tenant_id="default",
-        model_snapshot=_snapshot(),
-        run=SimpleNamespace(thread_id="research-thread"),
-    )
+    def retrieve(question, **kwargs):
+        captured.update(kwargs)
+        return {
+            "docs": [
+                {
+                    "content": "采购标准证据",
+                    "metadata": {
+                        "chunk_id": "chunk-1",
+                        "filename": "标准.pdf",
+                        "document_version_id": "version-1",
+                    },
+                }
+            ]
+        }
 
+    def forbidden(*_args, **_kwargs):
+        raise AssertionError(
+            "research retrieval must not run a complete RAG answer graph"
+        )
+
+    monkeypatch.setattr(rag_utils, "retrieve_documents", retrieve)
+    monkeypatch.setattr(pipeline.checkpointless_rag_graph, "invoke", forbidden)
+    frozen_scope = object()
     rows = await asyncio.to_thread(
         ResearchWorkflowRunner._retrieve_knowledge,
-        snapshot,
+        SimpleNamespace(tenant_id="tenant-a"),
         SimpleNamespace(cancelled=False),
         "核验采购标准",
+        deadline=123.0,
+        retrieval_snapshot=frozen_scope,
+        limit=8,
     )
-
-    assert [(item["stable_key"], item["source_kind"]) for item in rows] == [
-        ("chunk-1", "knowledge_base")
-    ]
+    assert captured["tenant_id"] == "tenant-a"
+    assert captured["retrieval_snapshot"] is frozen_scope
+    assert captured["deadline"] == 123.0
+    assert captured["top_k"] == 8
+    assert rows[0]["stable_key"] == "chunk-1"
+    assert rows[0]["metadata"]["document_version_id"] == "version-1"
 
 
 def test_numeric_year_does_not_discard_chinese_objective_evidence():
@@ -1183,7 +1210,7 @@ def test_numeric_year_does_not_discard_chinese_objective_evidence():
 
     assert len(kept) == 1
     assert kept[0]["title"] == evidence[0]["title"]
-    assert kept[0]["metadata"]["objective_policy_applied"] is False
+    assert kept[0]["metadata"]["objective_policy_applied"] is True
     assert dropped == 0
 
 
@@ -1194,7 +1221,7 @@ async def test_writer_receives_original_objective_and_specific_section_question(
     question = "规模与性能基线：分别核验三者在 1000 万向量下的查询性能"
 
     class Model:
-        def invoke(self, messages):
+        async def ainvoke(self, messages, **_kwargs):
             captured["prompt"] = messages[0]["content"]
             return SimpleNamespace(content="只依据证据形成的章节 [E1]。")
 
@@ -1206,9 +1233,9 @@ async def test_writer_receives_original_objective_and_specific_section_question(
             return SimpleNamespace(name="fake-writer", timeout_seconds=30)
 
     class Executor:
-        def call(self, operation, *, context):
+        async def acall(self, operation, *, context):
             assert context.cancellation() is False
-            return operation()
+            return await operation()
 
     runner = ResearchWorkflowRunner(models=Models(), executor=Executor())
     text, _input_tokens, _output_tokens = await runner._write_section(
@@ -1234,7 +1261,7 @@ async def test_frozen_plan_retrieval_adds_step_title_to_legacy_generic_question(
     objective = "比较 pgvector、Milvus 和 Qdrant 的性能、运维和成本"
     runner = ResearchWorkflowRunner()
 
-    def retrieve_web(_token, received_objective, received_question, _limit):
+    def retrieve_web(_token, received_objective, received_question, _limit, **_kwargs):
         captured["objective"] = received_objective
         captured["question"] = received_question
         return []
@@ -1269,10 +1296,10 @@ async def test_frozen_plan_retrieval_adds_step_title_to_legacy_generic_question(
 async def test_retrieval_reports_source_candidates_filters_and_errors(monkeypatch):
     runner = ResearchWorkflowRunner()
 
-    def retrieve_knowledge(*_args):
+    def retrieve_knowledge(*_args, **_kwargs):
         raise RuntimeError("knowledge unavailable")
 
-    def retrieve_web(*_args):
+    def retrieve_web(*_args, **_kwargs):
         return [
             {
                 "stable_key": "web-alpha",
@@ -1438,3 +1465,198 @@ def test_target_policy_rejects_wrong_repository_and_domain_quota():
         per_domain=2,
     )
     assert len(ranked) == 2
+
+
+def test_reused_evidence_is_scoped_to_current_run_and_recoverable(
+    session_factory, tmp_path
+):
+    repository = ResearchRepository(session_factory)
+    store = ResearchWorkflowStore(
+        session_factory, artifacts=ArtifactService(session_factory, root=tmp_path)
+    )
+    identities = []
+    for username in ("alice", "bob"):
+        project = repository.create_project(
+            username=username,
+            tenant_id="default",
+            title="证据复用",
+            objective="研究知渊",
+            mode="quick",
+            sources=["knowledge_base"],
+            output_formats=["markdown"],
+        )
+        repository.write_plan(
+            username=username,
+            tenant_id="default",
+            project_id=project.id,
+            expected_project_version=project.version,
+            steps=_steps(),
+            origin="user",
+        )
+        project = repository.get_project(
+            username=username, tenant_id="default", project_id=project.id
+        )
+        approved = repository.approve(
+            username=username,
+            tenant_id="default",
+            project_id=project.id,
+            expected_project_version=project.version,
+            idempotency_key=username,
+            model_snapshot=_snapshot(),
+        )
+        run = RunRepository(session_factory).claim(
+            run_id=approved.run_id, worker_id="worker"
+        )
+        identity = {
+            "run_id": run.id,
+            "worker_id": "worker",
+            "fencing_token": run.fencing_token,
+        }
+        store.step_started(**identity, step_key="step-1", position=1)
+        evidence = store.step_completed(
+            **identity,
+            step_key="step-1",
+            position=1,
+            evidence=[{"stable_key": "shared-key", "content": f"{username} 知渊证据"}],
+            degraded=False,
+        )
+        identities.append((identity, evidence))
+    identity, own = identities[0]
+    store.step_started(**identity, step_key="step-2", position=2)
+    reused = store.step_completed(
+        **identity,
+        step_key="step-2",
+        position=2,
+        evidence=[],
+        degraded=False,
+        reused_evidence_ids=[own[0].id],
+    )
+    assert [item.id for item in reused] == [own[0].id]
+    assert reused[0].citation_number == own[0].citation_number
+    with pytest.raises(AppError) as error:
+        store.step_completed(
+            **identity,
+            step_key="step-2",
+            position=2,
+            evidence=[],
+            degraded=False,
+            reused_evidence_ids=[identities[1][1][0].id],
+        )
+    assert error.value.status_code == 409
+    with session_factory() as db:
+        step = (
+            db.query(ResearchStep)
+            .filter(
+                ResearchStep.run_id == identity["run_id"],
+                ResearchStep.step_key == "step-2",
+            )
+            .one()
+        )
+        assert step.detail_json["evidence_ids"] == [own[0].id]
+
+
+def test_step_completes_only_with_persisted_chapter_and_unverified_claim_has_no_support_edges(
+    session_factory, tmp_path
+):
+    repository = ResearchRepository(session_factory)
+    project = repository.create_project(
+        username="alice",
+        tenant_id="default",
+        title="章节核验",
+        objective="研究知渊",
+        mode="quick",
+        sources=["knowledge_base"],
+        output_formats=["markdown"],
+    )
+    repository.write_plan(
+        username="alice",
+        tenant_id="default",
+        project_id=project.id,
+        expected_project_version=project.version,
+        steps=_steps(),
+        origin="user",
+    )
+    project = repository.get_project(
+        username="alice", tenant_id="default", project_id=project.id
+    )
+    approved = repository.approve(
+        username="alice",
+        tenant_id="default",
+        project_id=project.id,
+        expected_project_version=project.version,
+        idempotency_key="chapter-state",
+        model_snapshot=_snapshot(),
+    )
+    runs = RunRepository(session_factory)
+    claimed = runs.claim(run_id=approved.run_id, worker_id="worker")
+    store = ResearchWorkflowStore(
+        session_factory, artifacts=ArtifactService(session_factory, root=tmp_path)
+    )
+    identity = {
+        "run_id": claimed.id,
+        "worker_id": "worker",
+        "fencing_token": claimed.fencing_token,
+    }
+    store.step_started(**identity, step_key="step-1", position=1)
+    evidence = store.step_completed(
+        **identity,
+        step_key="step-1",
+        position=1,
+        evidence=[{"stable_key": "fact", "content": "知渊是知识库优先平台。"}],
+        degraded=False,
+    )
+    with session_factory() as db:
+        step = (
+            db.query(ResearchStep)
+            .filter(
+                ResearchStep.run_id == claimed.id, ResearchStep.step_key == "step-1"
+            )
+            .one()
+        )
+        assert step.status == "running"
+        assert step.finished_at is None
+        assert step.detail_json["phase"] == "writing"
+    store.set_step_phase(**identity, step_key="step-1", phase="verifying")
+    store.write_section_and_draft(
+        **identity,
+        project_id=project.id,
+        user_id=1,
+        tenant_id="default",
+        section_key="step-1",
+        position=1,
+        title="事实",
+        markdown="待核验结论 [E1]",
+        evidence_ids=[item.id for item in evidence],
+        degraded=True,
+        complete_draft="# 研究知渊\n\n待核验结论 [E1]",
+        claim_text="待核验结论",
+        claim_verdict="insufficient",
+        claim_reason="核验失败",
+        revision_count=0,
+    )
+    recovered = store.completed_section(claimed.id, "step-1")
+    assert recovered is not None
+    assert recovered[0].status == "degraded"
+    assert recovered[2].verdict == "insufficient"
+    with session_factory() as db:
+        step = (
+            db.query(ResearchStep)
+            .filter(
+                ResearchStep.run_id == claimed.id, ResearchStep.step_key == "step-1"
+            )
+            .one()
+        )
+        assert step.status == "degraded"
+        assert step.finished_at is not None
+        assert db.query(ResearchClaimEvidence).count() == 0
+        events = (
+            db.query(RunEvent)
+            .filter(RunEvent.run_id == claimed.id)
+            .order_by(RunEvent.sequence)
+            .all()
+        )
+        assert [event.sequence for event in events] == list(range(1, len(events) + 1))
+        assert not any(
+            event.event_type in {"run.completed", "message.completed"}
+            for event in events
+        )

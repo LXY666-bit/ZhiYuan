@@ -29,7 +29,7 @@ from backend.providers import (
 from backend.providers.runtime import provider_runtime
 from backend.rag.reranking import RerankStage
 from pydantic import BaseModel, Field
-from backend.agent.models import ModelRole, model_registry
+from backend.agent.models import ModelRole, model_registry, structured_output
 from backend.model_control import ModelCatalogSnapshot
 
 try:
@@ -526,7 +526,7 @@ def rewrite_query_once(
             timeout_seconds = 15.0
 
     result = _provider_executor.call(
-        lambda: model.with_structured_output(RewritePlan).invoke(
+        lambda: structured_output(model, RewritePlan).invoke(
             [{"role": "user", "content": REWRITE_PROMPT.format(query=query)}]
         ),
         context=ProviderCallContext(

@@ -1318,25 +1318,6 @@ html[data-theme='light'] .welcome-avatar {
   line-height: 1.75;
 }
 
-.welcome-capabilities {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 16px;
-}
-
-.welcome-capabilities span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 8px;
-  border-radius: 999px;
-  color: var(--muted);
-  background: var(--surface-soft);
-  font-size: 7px;
-}
-
 /* Messages and markdown */
 
 .message {
@@ -2107,54 +2088,6 @@ html[data-theme='light'] .context-card {
   font-size: 7px;
 }
 
-.run-timeline {
-  display: grid;
-  padding-top: 11px;
-}
-
-.run-step {
-  position: relative;
-  display: grid;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  gap: 8px;
-  min-height: 39px;
-}
-
-.run-step:not(:last-child)::before {
-  position: absolute;
-  top: 18px;
-  bottom: -1px;
-  left: 7px;
-  width: 1px;
-  background: var(--line-strong);
-  content: '';
-}
-
-.run-step-dot {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  width: 15px;
-  height: 15px;
-  place-items: center;
-  border: 1px solid rgba(168, 246, 209, 0.2);
-  border-radius: 50%;
-  color: #122018;
-  background: var(--mint);
-  font-size: 7px;
-}
-
-html[data-theme='light'] .run-step-dot {
-  color: #fff;
-}
-
-.run-step-dot.active {
-  color: var(--warning);
-  border-color: rgba(244, 199, 109, 0.2);
-  background: var(--warning-soft);
-  animation: context-pulse 1.5s ease-in-out infinite;
-}
-
 .run-step-copy {
   min-width: 0;
 }
@@ -2177,12 +2110,6 @@ html[data-theme='light'] .run-step-dot {
   font-size: 7px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.run-step-time {
-  color: var(--muted-strong);
-  font-size: 7px;
-  font-variant-numeric: tabular-nums;
 }
 
 .confidence-card {
@@ -3509,10 +3436,6 @@ html[data-theme='light'] .btn-primary {
   font-size: var(--font-body);
 }
 
-.welcome-capabilities span {
-  font-size: var(--font-micro);
-}
-
 .message-author span,
 .message-author small {
   font-size: var(--font-micro);
@@ -3574,7 +3497,6 @@ span.cite-ref,
 .context-card-heading small,
 .context-card-heading > span,
 .run-step-copy small,
-.run-step-time,
 .confidence-card p,
 .context-section-heading span,
 .context-source-copy small,
@@ -4063,10 +3985,6 @@ span.cite-ref,
 
   .welcome-screen h2 {
     font-size: 28px;
-  }
-
-  .welcome-capabilities {
-    display: none;
   }
 
   .message-content {

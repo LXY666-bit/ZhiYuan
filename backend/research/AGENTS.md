@@ -12,3 +12,7 @@
 - Quick、Standard、Deep 均使用 authenticated Tavily advanced；缺 Key 时显式降级，不得回退无 Key 搜索。秘密不得进入数据库、Snapshot、Event、日志和前端。
 - 附件只进入独立 research collection，并按 tenant/project/attachment/version 完整过滤。
 - 不默认运行 live 评测。
+- Research 搜证复用正式 `backend.rag.utils.retrieve_documents` 的召回/融合/Rerank，不为已经拆分的研究章节重复执行完整 RAG 分类、分解与路由图。只读检索范围由当前执行显式持有，不使用全局“当前快照”。
+- 模型调用使用 native async + `ProviderExecutor.acall`，所有重试继承冻结阶段预算与 Run 绝对 deadline，恢复不重新计时。合并审阅同时检查章节问题和核心 Claim；有问题才局部修订，修订后必须复核。Writer 失败时直接披露 insufficient，不核验失败占位文本。
+
+- 冻结 Profile 的决策证据复用开启时，事实章节并行，明确比较/选型标题须等待事实落盘并读取同一 Run 的 Evidence/Claim；等待不能占并发槽。综合写作与发布前核验共用综合阶段 deadline，审阅不通过不能交付确定的整体推荐。

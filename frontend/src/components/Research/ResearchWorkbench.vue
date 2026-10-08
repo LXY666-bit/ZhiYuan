@@ -4,7 +4,7 @@
       <div>
         <span class="panel-eyebrow">Research workbench</span>
         <h1>深度研搜</h1>
-        <p>先生成并审批研究计划，再由 canonical Run 完成证据、核验和报告交付。</p>
+        <p>先确认研究计划，再搜集证据、核验结论并交付可审阅的报告。</p>
       </div>
       <button class="primary" type="button" @click="showCreate = !showCreate">
         {{ showCreate ? '收起' : '新建研究' }}
@@ -22,11 +22,12 @@
       <label
         >模式
         <select v-model="form.mode">
-          <option value="quick">Quick</option>
-          <option value="standard">Standard</option>
-          <option value="deep">Deep</option>
+          <option value="quick">Quick · 快速概览</option>
+          <option value="standard">Standard · 核验与定向补研</option>
+          <option value="deep">Deep · 更多证据与研究维度</option>
         </select>
       </label>
+      <p class="research-muted">{{ modeDescription(form.mode) }}</p>
       <div class="checkboxes">
         <label><input v-model="form.sources" type="checkbox" value="knowledge_base" />知识库</label>
         <label><input v-model="form.sources" type="checkbox" value="web" />Web</label>
@@ -95,14 +96,18 @@
               v-if="store.plan"
               type="button"
               class="secondary-button"
-              :disabled="store.busy"
-              @click="store.approve"
+              :disabled="store.busy || planDirty || activePlanJob"
+              @click="approvePlan"
             >
               批准并开始研究
             </button>
             <label class="upload-button">
               添加附件
-              <input type="file" accept=".pdf,.docx,.txt,.md" @change="uploadAttachment" />
+              <input
+                type="file"
+                accept=".pdf,.docx,.doc,.xlsx,.xls,.html,.htm"
+                @change="uploadAttachment"
+              />
             </label>
           </div>
           <div class="actions secondary-actions">
@@ -145,9 +150,23 @@
             <li v-for="(step, index) in editableSteps" :key="step.step_key">
               <span class="step-number">{{ String(index + 1).padStart(2, '0') }}</span>
               <div class="step-fields">
-                <label>步骤标题<input v-model.trim="step.title" aria-label="步骤标题" /></label>
                 <label
-                  >研究问题<textarea v-model.trim="step.question" rows="2" aria-label="研究问题" />
+                  >步骤标题<input
+                    v-model.trim="step.title"
+                    aria-label="步骤标题"
+                    :disabled="
+                      store.selected.lifecycle_status === 'frozen' || store.busy || activePlanJob
+                    "
+                /></label>
+                <label
+                  >研究问题<textarea
+                    v-model.trim="step.question"
+                    rows="2"
+                    aria-label="研究问题"
+                    :disabled="
+                      store.selected.lifecycle_status === 'frozen' || store.busy || activePlanJob
+                    "
+                  />
                 </label>
                 <div class="source-tags" aria-label="资料来源">
                   <span v-for="source in step.sources" :key="source">{{
@@ -157,6 +176,9 @@
               </div>
             </li>
           </ol>
+          <p v-if="planDirty" class="research-muted" role="status">
+            计划有未保存修改，请保存新版本后再批准研究。
+          </p>
           <button
             v-if="store.selected.lifecycle_status !== 'frozen'"
             type="button"
@@ -228,13 +250,20 @@
               ><small>已采纳证据</small><b>{{ store.evidence.length }}</b></span
             >
             <span
-              ><small>已核验结论</small><b>{{ store.claims.length }}</b></span
+              ><small>已检查核心结论</small><b>{{ store.claims.length }}</b></span
             >
             <span
               ><small>已完成章节</small
               ><b>{{ completedSectionCount }} / {{ executionSteps.length }}</b></span
             >
           </div>
+          <p
+            v-if="isRunActive && store.metrics?.run_budget_seconds"
+            class="research-muted run-budget-note"
+          >
+            本次时间预算：{{ formatDuration(store.metrics.run_budget_seconds * 1000) }}。 已保存
+            {{ store.sections.length }} 个章节，可提前阅读；超时会保留结果并标明缺口。
+          </p>
           <ol v-if="executionSteps.length" class="run-steps" aria-label="研究步骤执行情况">
             <li
               v-for="step in executionSteps"
@@ -252,7 +281,11 @@
                 <span class="run-step-copy">
                   <span>
                     <strong>{{ step.title }}</strong>
-                    <em>{{ stepStatusLabel(step.status) }}</em>
+                    <em>{{
+                      step.status === 'running' && step.phase
+                        ? phaseLabel(step.phase)
+                        : stepStatusLabel(step.status)
+                    }}</em>
                   </span>
                   <span class="run-step-question">{{ step.question }}</span>
                   <small>
@@ -325,8 +358,46 @@
           <details v-for="section in store.sections" :key="String(section.id)">
             <summary>{{ section.title }} · {{ section.status }}</summary>
             <!-- parseMarkdown sanitizes model-authored Markdown before v-html rendering. -->
-            <div class="research-markdown" v-html="sectionMarkdown(section)"></div>
+            <div
+              class="research-markdown"
+              @click="openCitation"
+              v-html="sectionMarkdown(section)"
+            ></div>
           </details>
+        </article>
+
+        <article v-if="store.claims.length" class="research-card content-card claim-card">
+          <div class="card-heading">
+            <h3>结论核验</h3>
+            <span class="step-count">{{ unresolvedClaimCount }} 项需审阅</span>
+          </div>
+          <details v-for="claim in store.claims" :key="String(claim.id)">
+            <summary>{{ claimVerdictLabel(claim.verdict) }} · {{ claim.text }}</summary>
+            <p>{{ claim.reason }}</p>
+            <small class="research-muted">每章核验核心结论；其他事实仍需结合引用审阅。</small>
+          </details>
+        </article>
+
+        <article
+          v-if="selectedCitation"
+          ref="citationPanelRef"
+          tabindex="-1"
+          class="research-card citation-detail"
+          aria-label="引用证据详情"
+        >
+          <div class="card-heading">
+            <h3>[{{ selectedCitation.citation }}] {{ selectedCitation.title }}</h3>
+            <button type="button" @click="closeCitation">关闭证据</button>
+          </div>
+          <p class="research-muted">{{ evidenceSourceLabel(selectedCitation.source_kind) }}</p>
+          <p class="citation-content">{{ selectedCitation.content }}</p>
+          <a
+            v-if="citationSourceUrl"
+            :href="citationSourceUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            >打开原始来源</a
+          >
         </article>
 
         <article v-if="store.artifacts.length" class="research-card content-card">
@@ -337,6 +408,13 @@
           <div v-for="artifact in store.artifacts" :key="String(artifact.id)" class="artifact-row">
             <button type="button" class="artifact-link" @click="downloadArtifact(artifact)">
               {{ artifact.filename }} · {{ artifact.state }} v{{ artifact.version }}
+            </button>
+            <button
+              v-if="artifact.media_type === 'text/markdown' && artifact.state === 'final'"
+              type="button"
+              @click="openReport(artifact)"
+            >
+              阅读报告
             </button>
             <button
               v-if="artifact.media_type === 'text/markdown' && artifact.state === 'final'"
@@ -375,7 +453,7 @@
                   </button>
                 </div>
                 <!-- markdownPreview is sanitized by the shared Markdown renderer. -->
-                <div class="research-markdown" v-html="markdownPreview"></div>
+                <div class="research-markdown" @click="openCitation" v-html="markdownPreview"></div>
               </section>
             </div>
             <div class="actions">
@@ -410,10 +488,17 @@
             <div>
               <span class="card-eyebrow">MARKDOWN REPORT</span>
               <h2 id="report-preview-title">报告预览</h2>
-              <p>导出 PDF 会先保存当前内容为新版本，确保交付物可以追溯。</p>
+              <p>
+                {{
+                  readingArtifact
+                    ? '正在阅读已保存的报告版本，点击引用可查看证据。'
+                    : '导出 PDF 会先保存当前内容为新版本，确保交付物可以追溯。'
+                }}
+              </p>
             </div>
             <div class="report-preview-actions">
               <button
+                v-if="!readingArtifact"
                 type="button"
                 class="primary report-preview-export"
                 :disabled="store.busy"
@@ -421,6 +506,14 @@
               >
                 <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
                 {{ store.busy ? '正在生成…' : '导出 PDF' }}
+              </button>
+              <button
+                v-else
+                type="button"
+                class="primary"
+                @click="downloadArtifact(readingArtifact)"
+              >
+                下载报告
               </button>
               <button
                 type="button"
@@ -434,7 +527,7 @@
           </header>
           <!-- markdownPreview is sanitized by the shared Markdown renderer. -->
           <div class="report-preview-content">
-            <div class="research-markdown" v-html="markdownPreview"></div>
+            <div class="research-markdown" @click="openCitation" v-html="markdownPreview"></div>
           </div>
         </section>
       </div>
@@ -454,7 +547,7 @@ import type {
 } from '@/types/generated/research-api-v1';
 import { fetchArtifact } from '@/artifacts/artifactClient';
 import type { ResearchStepResource } from '@/research/researchClient';
-import { parseMarkdown } from '@/utils/markdown';
+import { renderResearchMarkdown } from '@/research/reportMarkdown';
 
 const store = useResearchStore();
 const runs = useRunsStore();
@@ -462,13 +555,39 @@ const showCreate = ref(false);
 const editableSteps = ref<ResearchPlanStepV1[]>([]);
 const editingMarkdown = ref(false);
 const markdownDraft = ref('');
+const readingArtifact = ref<Record<string, unknown> | null>(null);
 const previewExpanded = ref(false);
 const previewExpandButtonRef = ref<HTMLButtonElement | null>(null);
 const expandedPreviewDialogRef = ref<HTMLElement | null>(null);
 const selectedStepKey = ref<string | null>(null);
+const selectedCitationId = ref<string | null>(null);
+const citationPanelRef = ref<HTMLElement | null>(null);
+let citationTrigger: HTMLElement | null = null;
+let citationWasExpanded = false;
 const displayNow = ref(Date.now());
 let elapsedTimer: ReturnType<typeof setInterval> | null = null;
-const markdownPreview = computed(() => parseMarkdown(markdownDraft.value));
+const citationIds = computed(() => new Set(store.evidence.map((item) => String(item.citation))));
+const markdownPreview = computed(() =>
+  renderResearchMarkdown(markdownDraft.value, citationIds.value)
+);
+const selectedCitation = computed(
+  () => store.evidence.find((item) => item.citation === selectedCitationId.value) || null
+);
+const citationSourceUrl = computed(() => {
+  try {
+    const url = new URL(String(selectedCitation.value?.source_uri || ''));
+    return ['https:', 'http:'].includes(url.protocol) ? url.href : null;
+  } catch {
+    return null;
+  }
+});
+const unresolvedClaimCount = computed(
+  () => store.claims.filter((item) => item.verdict !== 'supported').length
+);
+const planDirty = computed(
+  () =>
+    Boolean(store.plan) && JSON.stringify(editableSteps.value) !== JSON.stringify(store.plan?.steps)
+);
 const form = reactive({
   title: '',
   objective: '',
@@ -490,6 +609,7 @@ const executionSteps = computed(() =>
       ...planStep,
       position: runtimeStep?.position || index + 1,
       status: runtimeStep?.status || 'pending',
+      phase: runtimeStep?.phase,
       evidenceCount: runtimeStep?.evidence_count || 0,
       evidenceIds: persistedEvidenceIds.length
         ? persistedEvidenceIds
@@ -517,6 +637,9 @@ const completedSectionCount = computed(
     store.sections.filter((section) => ['completed', 'degraded'].includes(String(section.status)))
       .length
 );
+const degradedSectionCount = computed(
+  () => store.sections.filter((section) => section.status === 'degraded').length
+);
 const isRunActive = computed(() =>
   Boolean(
     runState.value &&
@@ -542,8 +665,13 @@ const runMetrics = computed(() => {
 });
 const runPhase = computed(() => {
   if (!runState.value) return { title: '等待运行', detail: '批准研究计划后开始执行。' };
-  if (runState.value.status === 'completed')
-    return { title: '研究已交付', detail: '证据、核验结果和报告已保存。' };
+  if (runState.value.status === 'completed') {
+    const degraded = degradedSectionCount.value > 0 || runState.value.warnings.length > 0;
+    return {
+      title: degraded ? '研究已交付，部分内容降级' : '研究已交付',
+      detail: `报告已保存；${degradedSectionCount.value} 个章节降级，${unresolvedClaimCount.value} 项核心结论存在冲突或尚未可靠核验。交付完成不代表全部事实已验证，请结合引用和降级提示审阅。`,
+    };
+  }
   if (runState.value.status === 'failed')
     return { title: '研究执行失败', detail: '可查看降级提示或重新研究。' };
   if (runState.value.status === 'cancelled')
@@ -552,18 +680,39 @@ const runPhase = computed(() => {
   if (running)
     return {
       title: `正在研究：${running.title}`,
-      detail: '检索、证据整理和章节写作会按步骤持续更新。',
+      detail: running.phase
+        ? phaseLabel(running.phase)
+        : '检索、证据整理和章节写作会按步骤持续更新。',
     };
-  if (executionSteps.value.some((step) => ['completed', 'degraded'].includes(step.status))) {
-    return { title: '正在撰写和核验章节', detail: '正在根据已保存证据生成章节并检查结论支持度。' };
-  }
   if (store.sections.length)
-    return { title: '正在合并报告', detail: '正在整理章节、引用和最终交付物。' };
+    return { title: '正在综合研究结论', detail: '正在协调章节之间的发现、冲突和待验证问题。' };
   return { title: '正在准备研究', detail: '正在加载冻结的计划和资料范围。' };
 });
 const statusLabel = (project: ResearchProjectV1) =>
   runStatusLabel(project.run_status || project.lifecycle_status);
 const modeLabel = (mode: ResearchMode) => mode.toUpperCase();
+const modeDescription = (mode: ResearchMode) =>
+  ({
+    quick: '2–3 个研究步骤，适合快速了解；不追加补研，资源消耗较低。',
+    standard: '3–5 个研究步骤，按具体证据缺口补研，并检查和修订章节。',
+    deep: '4–6 个研究步骤，保留更多证据，按需修订；已完成章节可提前阅读。',
+  })[mode];
+const verdictLabels: Record<string, string> = {
+  supported: '核心结论有支持',
+  unsupported: '缺少证据支持',
+  conflicting: '存在冲突证据',
+  insufficient: '尚未可靠核验',
+};
+const claimVerdictLabel = (value: unknown) => verdictLabels[String(value)] || '待审阅';
+const phaseLabel = (phase: string) =>
+  (
+    ({
+      retrieving: '正在搜集证据',
+      writing: '正在撰写章节',
+      verifying: '正在核验结论',
+      completed: '已完成',
+    }) as Record<string, string>
+  )[phase] || '进行中';
 const sourceLabel = (source: ResearchSource) =>
   ({ knowledge_base: '知识库', web: 'Web', attachments: '附件' })[source];
 const runStatusLabel = (status: string) =>
@@ -647,10 +796,48 @@ function formatTokens(value: number): string {
   );
 }
 function sectionMarkdown(section: Record<string, unknown>): string {
-  return parseMarkdown(
-    typeof section.content_markdown === 'string' ? section.content_markdown : ''
+  return renderResearchMarkdown(
+    typeof section.content_markdown === 'string' ? section.content_markdown : '',
+    citationIds.value
   );
 }
+async function approvePlan() {
+  if (planDirty.value || activePlanJob.value || store.busy) return;
+  await store.approve();
+}
+async function openCitation(event: MouseEvent) {
+  const trigger = (event.target as HTMLElement).closest<HTMLElement>('[data-citation]');
+  if (!trigger || !citationIds.value.has(trigger.dataset.citation || '')) return;
+  selectedCitationId.value = trigger.dataset.citation || null;
+  citationTrigger = trigger;
+  citationWasExpanded = previewExpanded.value;
+  previewExpanded.value = false;
+  await nextTick();
+  citationPanelRef.value?.focus();
+  citationPanelRef.value?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+}
+async function closeCitation() {
+  const citation = selectedCitationId.value;
+  selectedCitationId.value = null;
+  if (citationWasExpanded) {
+    previewExpanded.value = true;
+    await nextTick();
+    expandedPreviewDialogRef.value
+      ?.querySelector<HTMLElement>(`[data-citation="${citation}"]`)
+      ?.focus();
+  } else citationTrigger?.focus();
+  citationTrigger = null;
+}
+watch(
+  () => store.selectedId,
+  () => {
+    selectedCitationId.value = null;
+    selectedStepKey.value = null;
+    editingMarkdown.value = false;
+    previewExpanded.value = false;
+    readingArtifact.value = null;
+  }
+);
 watch(
   () => runState.value?.lastResearchUpdate,
   (update) => {
@@ -740,8 +927,23 @@ async function deleteProject() {
   }
 }
 async function openMarkdownEditor(artifact: Record<string, unknown>) {
-  markdownDraft.value = await (await fetchArtifact(String(artifact.download_url || ''))).text();
+  const projectId = store.selectedId;
+  const markdown = await (await fetchArtifact(String(artifact.download_url || ''))).text();
+  if (projectId !== store.selectedId) return;
+  readingArtifact.value = null;
+  markdownDraft.value = markdown;
   editingMarkdown.value = true;
+}
+async function openReport(artifact: Record<string, unknown>) {
+  const projectId = store.selectedId;
+  const markdown = await (await fetchArtifact(String(artifact.download_url || ''))).text();
+  if (projectId !== store.selectedId) return;
+  readingArtifact.value = artifact;
+  markdownDraft.value = markdown;
+  editingMarkdown.value = false;
+  previewExpanded.value = true;
+  await nextTick();
+  expandedPreviewDialogRef.value?.focus();
 }
 async function openExpandedPreview() {
   previewExpanded.value = true;
@@ -773,6 +975,24 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.research-markdown :deep(.research-citation) {
+  padding: 0 3px;
+  color: var(--accent, #a8dcca);
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.citation-content {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+}
+.citation-detail:focus-visible {
+  outline: 2px solid var(--accent, #a8dcca);
+  outline-offset: 3px;
+}
 .research-workbench {
   width: 100%;
   height: 100%;

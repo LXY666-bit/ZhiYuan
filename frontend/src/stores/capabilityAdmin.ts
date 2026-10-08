@@ -119,21 +119,10 @@ export const useCapabilityAdminStore = defineStore('capability-admin', {
     },
 
     async runDelete(operation: () => Promise<unknown>, notice: string) {
-      this.saving = true;
-      this.error = '';
-      this.notice = '';
-      try {
+      return this.runMutation(async () => {
         await operation();
-        this.controlPlane = await getCapabilityControlPlane();
-        this.notice = notice;
-        return this.controlPlane;
-      } catch (error) {
-        const publicError = getPublicError(error);
-        this.error = publicError.message;
-        throw publicError;
-      } finally {
-        this.saving = false;
-      }
+        return getCapabilityControlPlane();
+      }, notice);
     },
 
     clearNotice() {

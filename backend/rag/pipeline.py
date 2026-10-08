@@ -10,7 +10,7 @@ from langgraph.types import Command, Send, interrupt
 from pydantic import BaseModel, Field
 
 from backend.core.errors import AppError, ErrorCode
-from backend.agent.models import ModelRole, model_registry
+from backend.agent.models import ModelRole, model_registry, structured_output
 from backend.model_control import ModelCatalogSnapshot
 from backend.runs.request_context import RunRequestContext
 from backend.schemas.rag import HitlResumeState, normalize_rag_sub_trace
@@ -361,7 +361,7 @@ def _invoke_structured_model(
         cancellation=cancellation,
     )
     return _provider_executor.call(
-        lambda: model.with_structured_output(schema).invoke(messages),
+        lambda: structured_output(model, schema).invoke(messages),
         context=context,
         policy=_model_policy,
     )

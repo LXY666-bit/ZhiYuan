@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 import asyncio
 import logging
 from dataclasses import dataclass
@@ -34,8 +36,7 @@ class OutboxPublisher:
         self._session_factory = session_factory
 
     def _load_pending(self, limit: int) -> list[OutboxItem]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(TransactionOutbox)
                 .filter(
@@ -50,12 +51,9 @@ class OutboxPublisher:
                 OutboxItem(id=row.id, payload=dict(row.payload_json or {}))
                 for row in rows
             ]
-        finally:
-            db.close()
 
     def _mark_published(self, outbox_id: int) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(TransactionOutbox)
@@ -65,12 +63,9 @@ class OutboxPublisher:
                 )
                 if row and row.published_at is None:
                     row.published_at = utcnow()
-        finally:
-            db.close()
 
     def _mark_attempt(self, outbox_id: int) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(TransactionOutbox)
@@ -79,8 +74,6 @@ class OutboxPublisher:
                 )
                 if row:
                     row.attempts += 1
-        finally:
-            db.close()
 
     async def publish_pending(self, limit: int | None = None) -> int:
         batch_size = limit or get_settings().runs.outbox_batch_size

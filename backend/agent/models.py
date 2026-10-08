@@ -8,6 +8,8 @@ from threading import RLock
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.runnables import Runnable
+from pydantic import BaseModel
 
 from backend.core.errors import AppError, ErrorCode
 from backend.core.settings import AppSettings, get_settings
@@ -51,6 +53,11 @@ class ModelSpec:
 
 
 ModelInitializer = Callable[..., BaseChatModel]
+
+
+def structured_output(model: BaseChatModel, schema: type[BaseModel]) -> Runnable:
+    """Use tool calling for OpenAI-compatible providers, retaining schema validation."""
+    return model.with_structured_output(schema, method="function_calling")
 
 
 class ModelRegistry:

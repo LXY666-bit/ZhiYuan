@@ -12,7 +12,7 @@ import time
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any, Callable
 
-from backend.agent.models import ModelRegistry, model_registry
+from backend.agent.models import ModelRegistry, model_registry, structured_output
 from backend.core.errors import AppError
 from backend.dataqa.charts import infer_chart
 from backend.dataqa.contracts import DataQaGroundedSqlDecision
@@ -266,7 +266,7 @@ class DataQaWorkflowRunner:
         spec = self.models.describe(ModelRole.FAST, snapshot=snapshot.model_snapshot)
         prompt = _plan_prompt(snapshot.user_text, brief)
         return self.executor.call(
-            lambda: model.with_structured_output(DataQaGroundedSqlDecision).invoke(
+            lambda: structured_output(model, DataQaGroundedSqlDecision).invoke(
                 [{"role": "user", "content": prompt}]
             ),
             context=ProviderCallContext(

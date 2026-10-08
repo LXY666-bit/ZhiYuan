@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 import hashlib
 import json
 import math
@@ -926,8 +928,7 @@ class DocumentCatalog:
     ) -> KnowledgeBaseRecord | None:
         tenant = _required_text(tenant_id, "tenant_id", 64)
         normalized_name = _required_text(name, "name", 160)
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(KnowledgeBase)
                 .filter(
@@ -938,8 +939,6 @@ class DocumentCatalog:
                 .first()
             )
             return self._knowledge_base_record(row) if row else None
-        finally:
-            db.close()
 
     def reserve_upload(
         self,
@@ -1331,8 +1330,7 @@ class DocumentCatalog:
                 "显式 chunk count 必须与 exact manifest 完全一致",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -1385,8 +1383,6 @@ class DocumentCatalog:
                     document=self._document_records(db, [document])[0],
                     version=self._version_record(version),
                 )
-        finally:
-            db.close()
 
     @staticmethod
     def _assert_candidate(
@@ -1433,8 +1429,7 @@ class DocumentCatalog:
         expected_current_version_id: str | None,
         execution: IndexJobExecution | None = None,
     ) -> PublicationResult:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -1562,8 +1557,6 @@ class DocumentCatalog:
                     ),
                     published=True,
                 )
-        finally:
-            db.close()
 
     def _dead_letter_locked(
         self,
@@ -1771,8 +1764,7 @@ class DocumentCatalog:
     ) -> IndexJobRecord:
         code = _required_text(error_code, "error_code", 64)
         detail = str(error_detail_redacted or "")[:2000] or None
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -1788,8 +1780,6 @@ class DocumentCatalog:
                     error_detail_redacted=detail,
                     execution=execution,
                 )
-        finally:
-            db.close()
 
     def update_job(
         self,
@@ -1822,8 +1812,7 @@ class DocumentCatalog:
             else None
         )
         patch = dict(step_state_patch or {})
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -1973,8 +1962,6 @@ class DocumentCatalog:
                 self._bump_revision(knowledge_base, now)
                 db.flush()
                 return self._job_record(job, document=document)
-        finally:
-            db.close()
 
     def get_job(
         self,
@@ -1982,8 +1969,7 @@ class DocumentCatalog:
         job_id: str,
         tenant_id: str | None = None,
     ) -> IndexJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             job, _version, document, _knowledge_base = self._job_graph(
                 db,
                 job_id=job_id,
@@ -1991,8 +1977,6 @@ class DocumentCatalog:
                 lock=False,
             )
             return self._job_record(job, document=document)
-        finally:
-            db.close()
 
     def list_jobs(
         self,
@@ -2007,8 +1991,7 @@ class DocumentCatalog:
                 "limit 或 offset 无效",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(IndexJob, Document)
                 .join(
@@ -2023,8 +2006,6 @@ class DocumentCatalog:
                 .all()
             )
             return [self._job_record(job, document=document) for job, document in rows]
-        finally:
-            db.close()
 
     def _version_build(
         self,
@@ -2058,8 +2039,7 @@ class DocumentCatalog:
                 "lease_seconds 必须大于 0",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 clock = _lease_clock(db, now)
                 graph = (
@@ -2241,8 +2221,6 @@ class DocumentCatalog:
                         version=version,
                         document=document,
                     )
-        finally:
-            db.close()
 
     def assert_index_lease(
         self,
@@ -2251,8 +2229,7 @@ class DocumentCatalog:
         execution: IndexJobExecution,
         now: datetime | None = None,
     ) -> VersionBuild:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, _knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -2271,8 +2248,6 @@ class DocumentCatalog:
                     version=version,
                     document=document,
                 )
-        finally:
-            db.close()
 
     def heartbeat_index_job(
         self,
@@ -2288,8 +2263,7 @@ class DocumentCatalog:
                 "lease_seconds 必须大于 0",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, _knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -2307,8 +2281,6 @@ class DocumentCatalog:
                 job.updated_at = clock
                 db.flush()
                 return self._job_record(job, document=document)
-        finally:
-            db.close()
 
     def schedule_index_retry(
         self,
@@ -2329,8 +2301,7 @@ class DocumentCatalog:
             )
         code = _required_text(error_code, "error_code", 64)
         detail = str(error_detail_redacted or "")[:2000] or None
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -2374,8 +2345,6 @@ class DocumentCatalog:
                 job.updated_at = clock
                 db.flush()
                 return self._job_record(job, document=document)
-        finally:
-            db.close()
 
     def dead_letter_index_job(
         self,
@@ -2387,8 +2356,7 @@ class DocumentCatalog:
     ) -> IndexJobRecord:
         code = _required_text(error_code, "error_code", 64)
         detail = str(error_detail_redacted or "")[:2000] or None
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, knowledge_base = self._job_graph(
                     db, job_id=job_id, tenant_id=None, lock=True
@@ -2406,8 +2374,6 @@ class DocumentCatalog:
                     error_detail_redacted=detail,
                     now=clock,
                 )
-        finally:
-            db.close()
 
     def load_build(
         self,
@@ -2415,8 +2381,7 @@ class DocumentCatalog:
         job_id: str,
         tenant_id: str | None = None,
     ) -> VersionBuild:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             job, version, document, _knowledge_base = self._job_graph(
                 db,
                 job_id=job_id,
@@ -2428,8 +2393,6 @@ class DocumentCatalog:
                 document=self._document_records(db, [document])[0],
                 version=self._version_record(version),
             )
-        finally:
-            db.close()
 
     def list_documents(
         self,
@@ -2446,8 +2409,7 @@ class DocumentCatalog:
                 "limit 或 offset 无效",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             query = db.query(Document).filter(Document.tenant_id == tenant_id)
             if knowledge_base_id is not None:
                 query = query.filter(Document.knowledge_base_id == knowledge_base_id)
@@ -2460,8 +2422,6 @@ class DocumentCatalog:
                 .all()
             )
             return self._document_records(db, rows)
-        finally:
-            db.close()
 
     def get_current(
         self,
@@ -2470,8 +2430,7 @@ class DocumentCatalog:
         canonical_name: str,
         knowledge_base_id: str | None = None,
     ) -> DocumentRecord | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             document = self._document(
                 db,
                 tenant_id=tenant_id,
@@ -2495,8 +2454,6 @@ class DocumentCatalog:
                     status_code=409,
                 )
             return record
-        finally:
-            db.close()
 
     def retire(
         self,
@@ -2507,8 +2464,7 @@ class DocumentCatalog:
         retirement_job_id: str | None = None,
     ) -> RetirementResult:
         name = _required_text(canonical_name, "canonical_name", 255)
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 document = self._document(
                     db,
@@ -2689,8 +2645,6 @@ class DocumentCatalog:
                     ),
                     retirement_job_id=operation_id,
                 )
-        finally:
-            db.close()
 
     @staticmethod
     def _cleanup_graph(
@@ -2744,8 +2698,7 @@ class DocumentCatalog:
                 "lease_seconds 必须大于 0",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 clock = _lease_clock(db, now)
                 graph = (
@@ -2890,8 +2843,6 @@ class DocumentCatalog:
                         version=version,
                         document=document,
                     )
-        finally:
-            db.close()
 
     def heartbeat_cleanup_job(
         self,
@@ -2907,8 +2858,7 @@ class DocumentCatalog:
                 "lease_seconds 必须大于 0",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, _version, _document, _knowledge_base = self._cleanup_graph(
                     db, job_id=job_id, lock=True
@@ -2920,8 +2870,6 @@ class DocumentCatalog:
                 job.updated_at = clock
                 db.flush()
                 return self._cleanup_job_record(job)
-        finally:
-            db.close()
 
     def update_cleanup_job(
         self,
@@ -2932,8 +2880,7 @@ class DocumentCatalog:
         step_state_patch: Mapping | None = None,
     ) -> CleanupJobRecord:
         step = _required_text(current_step, "current_step", 64)
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, _version, _document, _knowledge_base = self._cleanup_graph(
                     db, job_id=job_id, lock=True
@@ -2948,8 +2895,6 @@ class DocumentCatalog:
                 job.updated_at = clock
                 db.flush()
                 return self._cleanup_job_record(job)
-        finally:
-            db.close()
 
     def _dead_letter_cleanup_locked(
         self,
@@ -2998,8 +2943,7 @@ class DocumentCatalog:
             )
         code = _required_text(error_code, "error_code", 64)
         detail = str(error_detail_redacted or "")[:2000] or None
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, _document, _knowledge_base = self._cleanup_graph(
                     db, job_id=job_id, lock=True
@@ -3033,8 +2977,6 @@ class DocumentCatalog:
                 version.updated_at = clock
                 db.flush()
                 return self._cleanup_job_record(job)
-        finally:
-            db.close()
 
     def dead_letter_cleanup_job(
         self,
@@ -3046,8 +2988,7 @@ class DocumentCatalog:
     ) -> CleanupJobRecord:
         code = _required_text(error_code, "error_code", 64)
         detail = str(error_detail_redacted or "")[:2000] or None
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, _document, _knowledge_base = self._cleanup_graph(
                     db, job_id=job_id, lock=True
@@ -3063,8 +3004,6 @@ class DocumentCatalog:
                 )
                 db.flush()
                 return record
-        finally:
-            db.close()
 
     def complete_cleanup_job(
         self,
@@ -3072,8 +3011,7 @@ class DocumentCatalog:
         job_id: str,
         execution: CleanupJobExecution,
     ) -> CleanupBuild:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, knowledge_base = self._cleanup_graph(
                     db, job_id=job_id, lock=True
@@ -3114,12 +3052,9 @@ class DocumentCatalog:
                     version=version,
                     document=document,
                 )
-        finally:
-            db.close()
 
     def get_cleanup_job(self, *, job_id: str) -> CleanupBuild:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             job, version, document, _knowledge_base = self._cleanup_graph(
                 db, job_id=job_id, lock=False
             )
@@ -3129,8 +3064,6 @@ class DocumentCatalog:
                 version=version,
                 document=document,
             )
-        finally:
-            db.close()
 
     def requeue_cleanup_job(
         self,
@@ -3145,8 +3078,7 @@ class DocumentCatalog:
                 "max_attempts 必须大于 0",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job, version, document, _knowledge_base = self._cleanup_graph(
                     db,
@@ -3204,8 +3136,6 @@ class DocumentCatalog:
                     version=version,
                     document=document,
                 )
-        finally:
-            db.close()
 
     def list_cleanup_jobs_for_document(
         self,
@@ -3213,8 +3143,7 @@ class DocumentCatalog:
         document_id: str,
         tenant_id: str | None = None,
     ) -> list[CleanupBuild]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(DocumentCleanupJob, DocumentVersion, Document)
                 .join(
@@ -3236,8 +3165,6 @@ class DocumentCatalog:
                 )
                 for job, version, document in rows
             ]
-        finally:
-            db.close()
 
     def list_cleanup_jobs(
         self,
@@ -3261,8 +3188,7 @@ class DocumentCatalog:
                 "未知清理任务状态",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(DocumentCleanupJob, DocumentVersion, Document)
                 .join(
@@ -3292,8 +3218,6 @@ class DocumentCatalog:
                 )
                 for job, version, document in rows
             ]
-        finally:
-            db.close()
 
     def list_cleanup_jobs_for_versions(
         self,
@@ -3309,8 +3233,7 @@ class DocumentCatalog:
         )
         if not version_ids:
             return []
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(DocumentCleanupJob, DocumentVersion, Document)
                 .join(
@@ -3338,8 +3261,6 @@ class DocumentCatalog:
                 for version_id in version_ids
                 if version_id in by_version
             ]
-        finally:
-            db.close()
 
     def get_retirement_job(
         self,
@@ -3347,8 +3268,7 @@ class DocumentCatalog:
         job_id: str,
         tenant_id: str,
     ) -> RetirementJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(DocumentRetirementJob)
                 .filter(
@@ -3364,8 +3284,6 @@ class DocumentCatalog:
                     status_code=404,
                 )
             return self._retirement_job_record(row)
-        finally:
-            db.close()
 
     def list_retirement_jobs(
         self,
@@ -3379,8 +3297,7 @@ class DocumentCatalog:
                 "limit 必须位于 1-1000",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(DocumentRetirementJob)
                 .filter(DocumentRetirementJob.tenant_id == tenant_id)
@@ -3392,8 +3309,6 @@ class DocumentCatalog:
                 .all()
             )
             return [self._retirement_job_record(row) for row in rows]
-        finally:
-            db.close()
 
     def record_retirement_error(
         self,
@@ -3403,8 +3318,7 @@ class DocumentCatalog:
         error_code: str,
     ) -> RetirementJobRecord:
         code = _required_text(error_code, "error_code", 64)
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(DocumentRetirementJob)
@@ -3425,8 +3339,6 @@ class DocumentCatalog:
                 row.updated_at = _database_now(db)
                 db.flush()
                 return self._retirement_job_record(row)
-        finally:
-            db.close()
 
     def record_worker_heartbeat(
         self,
@@ -3446,8 +3358,7 @@ class DocumentCatalog:
                 "未知 worker 状态",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 clock = _lease_clock(db, now)
                 row = (
@@ -3481,8 +3392,6 @@ class DocumentCatalog:
                     row.stopped_at = clock if state == WorkerStatus.STOPPED else None
                     row.metadata_json = dict(metadata or {})
                     row.updated_at = clock
-        finally:
-            db.close()
 
     def worker_readiness(
         self,
@@ -3504,8 +3413,7 @@ class DocumentCatalog:
                 "stale_after_seconds 必须大于 0",
                 status_code=400,
             )
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             clock = _lease_clock(db, now)
             cutoff = clock - timedelta(seconds=stale_after_seconds)
             fresh_candidates = (
@@ -3660,8 +3568,6 @@ class DocumentCatalog:
                 incompatible_fresh_workers=incompatible_fresh_workers,
                 expected_build_fingerprint=expected_capability,
             )
-        finally:
-            db.close()
 
     def cleanup_candidates(
         self,
@@ -3671,8 +3577,7 @@ class DocumentCatalog:
         limit: int = 100,
     ) -> list[CleanupCandidate]:
         cutoff = _utc_naive(now) if now is not None else utcnow()
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(DocumentVersion, Document)
                 .join(Document, Document.id == DocumentVersion.document_id)
@@ -3702,8 +3607,6 @@ class DocumentCatalog:
                 )
                 for version, document in rows
             ]
-        finally:
-            db.close()
 
     def record_cleanup(
         self,
@@ -3711,8 +3614,7 @@ class DocumentCatalog:
         document_version_id: str,
         error_code: str | None = None,
     ) -> DocumentVersionRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(DocumentVersion, Document, KnowledgeBase)
@@ -3800,8 +3702,6 @@ class DocumentCatalog:
                 self._bump_revision(knowledge_base, now)
                 db.flush()
                 return self._version_record(version)
-        finally:
-            db.close()
 
     def load_retrieval_snapshot(
         self,
@@ -3809,8 +3709,7 @@ class DocumentCatalog:
         tenant_id: str,
         knowledge_base_id: str | None = None,
     ) -> RetrievalCatalogSnapshot:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 knowledge_base_query = db.query(KnowledgeBase).filter(
                     KnowledgeBase.tenant_id == tenant_id,
@@ -3910,8 +3809,6 @@ class DocumentCatalog:
                     documents=records,
                     index_id=index_id,
                 )
-        finally:
-            db.close()
 
     def current_index_fingerprint(
         self,

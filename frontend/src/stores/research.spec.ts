@@ -1,6 +1,7 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  approveResearchProject,
   createPlanJob,
   getResearchPlan,
   getResearchProject,
@@ -11,6 +12,7 @@ import {
   listResearchResources,
   listResearchSteps,
   reviseResearchMarkdown,
+  rerunResearchProject,
 } from '@/research/researchClient';
 import { getRun } from '@/runs/runClient';
 import { useResearchStore } from './research';
@@ -29,6 +31,7 @@ vi.mock('@/research/researchClient', () => ({
   listResearchResources: vi.fn(),
   listResearchSteps: vi.fn(),
   reviseResearchMarkdown: vi.fn(),
+  rerunResearchProject: vi.fn(),
 }));
 
 vi.mock('@/runs/runClient', () => ({
@@ -79,6 +82,68 @@ describe('research store account scope and polling lifecycle', () => {
 
     expect(store.projects).toEqual([]);
     expect(store.selectedId).toBe('');
+  });
+
+  it('loads the first project details and attachments when reopening the workbench', async () => {
+    const initial = project();
+    vi.mocked(listResearchProjects).mockResolvedValue([initial]);
+    vi.mocked(getResearchProject).mockResolvedValue(initial);
+    vi.mocked(listResearchAttachments).mockResolvedValue([{ id: 'attachment', status: 'indexed' }]);
+    const store = useResearchStore();
+    await store.loadProjects();
+    expect(getResearchProject).toHaveBeenCalledWith(initial.id);
+    expect(store.attachments).toEqual([{ id: 'attachment', status: 'indexed' }]);
+  });
+
+  it.each(['approve', 'rerun'] as const)(
+    'drops a late %s result after account reset',
+    async (action) => {
+      const initial = project();
+      const pending = deferred<{
+        project: ReturnType<typeof project>;
+        run_id: string;
+        thread_version: number;
+      }>();
+      const request = action === 'approve' ? approveResearchProject : rerunResearchProject;
+      vi.mocked(request).mockReturnValue(pending.promise);
+      const store = useResearchStore();
+      store.projects = [initial];
+      store.selectedId = initial.id;
+      store.plan = {
+        id: 'plan',
+        project_id: initial.id,
+        version: 1,
+        objective: initial.objective,
+        steps: [],
+        created_at: initial.created_at,
+      };
+      const operation = store[action]();
+      store.reset();
+      pending.resolve({ project: initial, run_id: 'stale-run', thread_version: 1 });
+      await operation;
+      expect(store.projects).toEqual([]);
+      expect(store.selectedId).toBe('');
+      expect(getRun).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not apply old attachment results after switching to another project', async () => {
+    const first = project();
+    const second = { ...first, id: 'rproj_second' };
+    const attachments = deferred<Array<Record<string, unknown>>>();
+    vi.mocked(getResearchProject).mockImplementation(async (id) =>
+      id === first.id ? first : second
+    );
+    vi.mocked(listResearchAttachments).mockImplementation((id) =>
+      id === first.id ? attachments.promise : Promise.resolve([{ id: 'second-attachment' }])
+    );
+    const store = useResearchStore();
+    const pending = store.select(first.id);
+    await vi.waitFor(() => expect(listResearchAttachments).toHaveBeenCalledWith(first.id));
+    await store.select(second.id);
+    attachments.resolve([{ id: 'first-attachment' }]);
+    await pending;
+    expect(store.attachments).toEqual([{ id: 'second-attachment' }]);
   });
 
   it('clears Plan Job polling when the account scope resets', async () => {

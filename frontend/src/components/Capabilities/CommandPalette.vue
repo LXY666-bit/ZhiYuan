@@ -44,7 +44,6 @@
 
         <div
           id="capability-command-results"
-          ref="resultsRef"
           class="command-palette-results"
           role="listbox"
           aria-label="能力命令"
@@ -108,6 +107,7 @@ import {
 } from '@/capabilities/skillPresentation';
 import { useCapabilityStore } from '@/stores/capabilities';
 import type { CapabilityAvailabilityReason } from '@/types/capabilities';
+import { trapDialogFocus } from '@/utils/dialogFocus';
 import { getPublicError } from '@/utils/api';
 
 interface CommandItem {
@@ -129,7 +129,6 @@ const emit = defineEmits<{
 const store = useCapabilityStore();
 const dialogRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
-const resultsRef = ref<HTMLElement | null>(null);
 const query = ref('');
 const activeIndex = ref(-1);
 let returnFocus: HTMLElement | null = null;
@@ -253,26 +252,6 @@ const selectItem = (item: CommandItem) => {
 
 const closePalette = () => store.closePalette();
 
-const trapFocus = (event: KeyboardEvent) => {
-  const dialog = dialogRef.value;
-  if (!dialog) return;
-  const focusable = Array.from(
-    dialog.querySelectorAll<HTMLElement>(
-      'input, button:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    )
-  );
-  if (!focusable.length) return;
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-};
-
 const handleDialogKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') {
     event.preventDefault();
@@ -292,7 +271,12 @@ const handleDialogKeydown = (event: KeyboardEvent) => {
     }
     return;
   }
-  if (event.key === 'Tab') trapFocus(event);
+  if (event.key === 'Tab')
+    trapDialogFocus(
+      event,
+      dialogRef.value,
+      'input, button:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    );
 };
 
 watch(

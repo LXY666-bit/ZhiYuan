@@ -72,3 +72,46 @@ def test_live_fixture_uploads_markdown_as_supported_html_attachment(tmp_path):
     text = "\n".join(item["text"] for item in parse_html_file_to_sections(uploaded))
     assert "受监管企业" in text
     assert "Agent 平台" in text
+
+
+def test_bibliography_cannot_hide_uncited_body_or_wrong_source():
+    module = _module()
+    case = module.load_cases()[0]
+    row = module.score_observation(
+        case,
+        "quick",
+        report="# 报告\n\n这是未引用的事实。\n\n## 证据与来源\n\n- [E1] 其他资料",
+        completed=True,
+        plan_steps=2,
+        evidence=[{"citation": "E1", "title": "other.html"}],
+        claims=[],
+        sections=[{"status": "completed"}],
+        metrics={},
+        deterministic=False,
+    )
+    assert row["citation_coverage"] == 0
+    assert row["citation_validity"] == 0
+    assert row["expected_source_hit_rate"] == 0
+
+
+def test_scores_measure_body_citations_and_distinguish_unverified_claims():
+    module = _module()
+    case = module.load_cases()[13]
+    row = module.score_observation(
+        case,
+        "quick",
+        report="事实 A [E1]。\n\n事实 B 未附引用。\n\n> 证据不足，仍需核验。",
+        completed=True,
+        plan_steps=2,
+        evidence=[{"citation": "E1", "title": "catalog.html"}],
+        claims=[{"verdict": "insufficient"}],
+        sections=[{"status": "degraded"}],
+        metrics={},
+        deterministic=False,
+    )
+    assert row["citation_coverage"] == 0.5
+    assert row["citation_validity"] == 1
+    assert row["expected_source_hit_rate"] == 1
+    assert row["unsupported_claim_ratio"] == 0
+    assert row["unverified_claim_ratio"] == 1
+    assert row["gap_recognition"] == 1

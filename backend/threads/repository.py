@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
@@ -90,8 +92,7 @@ class ThreadRepository:
     def current_user_access(self, username: str) -> UserAccessSnapshot:
         """Read the current database role without trusting request-token claims."""
 
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             user = self._user(db, username)
             if user is None:
                 raise AppError(
@@ -104,8 +105,6 @@ class ThreadRepository:
                 username=user.username,
                 role=user.role,
             )
-        finally:
-            db.close()
 
     @staticmethod
     def _thread_query(
@@ -280,8 +279,7 @@ class ThreadRepository:
         status: str = "completed",
         rag_trace: dict | None = None,
     ) -> MessageRecord | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user = self._user(db, username)
                 if not user:
@@ -316,8 +314,6 @@ class ThreadRepository:
                 thread.updated_at = row.updated_at
                 db.flush()
                 return self._record(row, thread_id)
-        finally:
-            db.close()
 
     def list_messages_before(
         self,
@@ -329,8 +325,7 @@ class ThreadRepository:
     ) -> list[MessageRecord] | None:
         """Return one newest-first Message window, or ``None`` when not owned."""
 
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             user = self._user(db, username)
             if not user:
                 return None
@@ -353,8 +348,6 @@ class ThreadRepository:
                 self._record(message, thread_id, skill_name=skill_name)
                 for message, skill_name in rows
             ]
-        finally:
-            db.close()
 
     @staticmethod
     def _summary_record(
@@ -381,8 +374,7 @@ class ThreadRepository:
         title: str | None = None,
         kind: str = "chat",
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user = self._user(db, username)
                 if user is None:
@@ -404,16 +396,13 @@ class ThreadRepository:
                         **(thread.metadata_json or {}),
                         "title": title,
                     }
-        finally:
-            db.close()
 
     def get_thread_summary(
         self,
         username: str,
         thread_id: str,
     ) -> ThreadSummaryRecord | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             user = self._user(db, username)
             if user is None:
                 return None
@@ -437,12 +426,9 @@ class ThreadRepository:
                 return None
             thread, active_run = row
             return self._summary_record(thread, active_run)
-        finally:
-            db.close()
 
     def list_thread_summaries(self, username: str) -> list[ThreadSummaryRecord]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             user = self._user(db, username)
             if user is None:
                 return []
@@ -472,12 +458,9 @@ class ThreadRepository:
                 seen.add(thread.id)
                 summaries.append(self._summary_record(thread, active_run))
             return summaries
-        finally:
-            db.close()
 
     def delete_thread(self, username: str, thread_id: str) -> bool:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user = self._user(db, username)
                 if not user:
@@ -507,8 +490,6 @@ class ThreadRepository:
                     )
                 db.delete(thread)
                 return True
-        finally:
-            db.close()
 
 
 thread_repository = ThreadRepository()

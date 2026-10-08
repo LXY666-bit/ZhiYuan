@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections.abc import Callable, Iterable
 from decimal import Decimal
 
@@ -122,8 +124,7 @@ class CapabilityControlRepository:
         sql_settings: SqlAssistantSettings,
         web_research_enabled: bool,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 now = utcnow()
                 state = (
@@ -194,43 +195,31 @@ class CapabilityControlRepository:
                             updated_at=now,
                         )
                     )
-        finally:
-            db.close()
 
     def web_research_enabled(self) -> bool:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             return bool(self._state(db).web_research_enabled)
-        finally:
-            db.close()
 
     def list_skills(self) -> tuple[ManagedSkillRecord, ...]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(CapabilitySkillProfile)
                 .order_by(CapabilitySkillProfile.name.asc())
                 .all()
             )
             return tuple(self._skill_record(row) for row in rows)
-        finally:
-            db.close()
 
     def list_http_tools(self) -> tuple[ManagedHttpToolRecord, ...]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(CapabilityHttpToolProfile)
                 .order_by(CapabilityHttpToolProfile.name.asc())
                 .all()
             )
             return tuple(self._tool_record(row) for row in rows)
-        finally:
-            db.close()
 
     def sql_config(self) -> SqlAssistantConfigRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(SqlAssistantProfile)
                 .filter(SqlAssistantProfile.id == "default")
@@ -239,8 +228,6 @@ class CapabilityControlRepository:
             if row is None:
                 raise RuntimeError("SQL Assistant profile has not been initialized")
             return self._sql_record(row)
-        finally:
-            db.close()
 
     def create_skill(
         self,
@@ -294,8 +281,7 @@ class CapabilityControlRepository:
         enabled: bool,
         username: str,
     ) -> ManagedSkillRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 self._user_id(db, username)
                 row = (
@@ -322,12 +308,9 @@ class CapabilityControlRepository:
                 row.updated_at = utcnow()
                 db.flush()
                 return self._skill_record(row)
-        finally:
-            db.close()
 
     def delete_skill(self, *, name: str, username: str) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 self._user_id(db, username)
                 row = (
@@ -353,8 +336,6 @@ class CapabilityControlRepository:
                         stage="catalog",
                     )
                 db.delete(row)
-        finally:
-            db.close()
 
     def create_http_tool(
         self,
@@ -407,8 +388,7 @@ class CapabilityControlRepository:
         record: ManagedHttpToolRecord,
         username: str,
     ) -> ManagedHttpToolRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 self._user_id(db, username)
                 row = (
@@ -442,12 +422,9 @@ class CapabilityControlRepository:
                 row.updated_at = utcnow()
                 db.flush()
                 return self._tool_record(row)
-        finally:
-            db.close()
 
     def delete_http_tool(self, *, name: str, username: str) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 self._user_id(db, username)
                 row = (
@@ -465,8 +442,6 @@ class CapabilityControlRepository:
                         stage="catalog",
                     )
                 db.delete(row)
-        finally:
-            db.close()
 
     def update_sql_config(
         self,
@@ -474,8 +449,7 @@ class CapabilityControlRepository:
         record: SqlAssistantConfigRecord,
         username: str,
     ) -> SqlAssistantConfigRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user_id = self._user_id(db, username)
                 row = (
@@ -507,8 +481,6 @@ class CapabilityControlRepository:
                 row.updated_at = utcnow()
                 db.flush()
                 return self._sql_record(row)
-        finally:
-            db.close()
 
     def update_web_research(
         self,
@@ -516,16 +488,13 @@ class CapabilityControlRepository:
         enabled: bool,
         username: str,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 self._user_id(db, username)
                 state = self._state(db, lock=True)
                 state.web_research_enabled = bool(enabled)
                 state.updated_at = utcnow()
                 db.flush()
-        finally:
-            db.close()
 
 
 __all__ = ["CapabilityControlRepository"]

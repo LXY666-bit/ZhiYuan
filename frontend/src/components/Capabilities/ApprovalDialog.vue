@@ -101,9 +101,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import { skillDisplayName } from '@/capabilities/skillPresentation';
+import { networkLabel, scopeLabel, skillDisplayName } from '@/capabilities/skillPresentation';
 import { useCapabilityStore } from '@/stores/capabilities';
 import { useChatStore } from '@/stores/chat';
+import { trapDialogFocus } from '@/utils/dialogFocus';
 import { getPublicError } from '@/utils/api';
 
 const store = useCapabilityStore();
@@ -119,26 +120,6 @@ const draft = computed(() => store.pendingApprovalDraft);
 
 const toolDescription = (toolName: string) =>
   store.tools.find((tool) => tool.name === toolName)?.description || '受安全策略约束的执行能力';
-
-const networkLabel = (policy: string) => {
-  const labels: Record<string, string> = {
-    none: '无网络',
-    restricted: '受限公网',
-    'private-data': '私有数据网络',
-  };
-  return labels[policy] || policy;
-};
-
-const scopeLabel = (scope: string) => {
-  const labels: Record<string, string> = {
-    none: '无额外资源',
-    'public-web': '公开网页',
-    'private-data-read': '私有数据只读',
-    'code-execution': '隔离代码执行',
-    'knowledge-read': '知识库只读',
-  };
-  return labels[scope] || scope;
-};
 
 const cancel = () => {
   if (submitting.value) return;
@@ -175,30 +156,12 @@ const confirm = async () => {
   }
 };
 
-const trapFocus = (event: KeyboardEvent) => {
-  const dialog = dialogRef.value;
-  if (!dialog) return;
-  const focusable = Array.from(
-    dialog.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex]:not([tabindex="-1"])')
-  );
-  if (!focusable.length) return;
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-};
-
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') {
     event.preventDefault();
     cancel();
   } else if (event.key === 'Tab') {
-    trapFocus(event);
+    trapDialogFocus(event, dialogRef.value);
   }
 };
 

@@ -72,3 +72,19 @@ export const skillDisplaySummary = (skill: Pick<CapabilitySkill, 'name' | 'descr
 
 export const skillDisplayIcon = (name: string) =>
   presentations[name]?.icon || 'fa-solid fa-wand-magic-sparkles';
+
+const networkLabels: Record<string, string> = {
+  none: '无网络',
+  restricted: '受限公网',
+  'private-data': '私有数据网络',
+};
+const scopeLabels: Record<string, string> = {
+  none: '无额外资源',
+  'public-web': '公开网页',
+  'private-data-read': '私有数据只读',
+  'code-execution': '隔离代码执行',
+  'knowledge-read': '知识库只读',
+};
+
+export const networkLabel = (policy: string) => networkLabels[policy] || policy;
+export const scopeLabel = (scope: string) => scopeLabels[scope] || scope;

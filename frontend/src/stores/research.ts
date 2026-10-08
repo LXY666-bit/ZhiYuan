@@ -128,7 +128,7 @@ export const useResearchStore = defineStore('research', {
         const projects = await listResearchProjects();
         if (scope !== this.scopeVersion) return;
         this.projects = projects;
-        if (!this.selectedId && projects[0]) this.selectedId = projects[0].id;
+        if (!this.selectedId && projects[0]) await this.select(projects[0].id);
       } catch (error) {
         if (scope === this.scopeVersion) this.error = getPublicError(error).message;
       } finally {
@@ -171,16 +171,24 @@ export const useResearchStore = defineStore('research', {
         if (project.lifecycle_status !== 'draft') {
           await this.loadPlan(projectId);
         }
-        this.attachments = await listResearchAttachments(projectId);
+        if (scope !== this.scopeVersion || this.selectedId !== projectId) return;
+        const attachments = await listResearchAttachments(projectId);
+        if (scope !== this.scopeVersion || this.selectedId !== projectId) return;
+        this.attachments = attachments;
         if (project.latest_run_id) {
           await this.connectRun(project);
           await this.refreshResources(projectId);
         }
       } catch (error) {
         const publicError = getPublicError(error);
-        if (publicError.code !== 'NOT_FOUND') this.error = publicError.message;
+        if (
+          scope === this.scopeVersion &&
+          this.selectedId === projectId &&
+          publicError.code !== 'NOT_FOUND'
+        )
+          this.error = publicError.message;
       } finally {
-        if (scope === this.scopeVersion) this.loading = false;
+        if (scope === this.scopeVersion && this.selectedId === projectId) this.loading = false;
       }
     },
     replaceProject(project: ResearchProjectV1) {
@@ -245,41 +253,54 @@ export const useResearchStore = defineStore('research', {
       this.planJob = await cancelPlanJob(project.id, this.planJob.id);
     },
     async loadPlan(projectId: string) {
-      this.plan = await getResearchPlan(projectId);
+      const scope = this.scopeVersion;
+      const plan = await getResearchPlan(projectId);
+      if (scope === this.scopeVersion && this.selectedId === projectId) this.plan = plan;
     },
     async savePlan(steps: ResearchPlanStepV1[]) {
       const project = this.selected;
       if (!project) return;
+      const scope = this.scopeVersion;
       this.busy = true;
       this.error = '';
       try {
-        this.plan = await updateResearchPlan(project, steps);
-        this.replaceProject(await getResearchProject(project.id));
+        const plan = await updateResearchPlan(project, steps);
+        const updated = await getResearchProject(project.id);
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
+        this.plan = plan;
+        this.replaceProject(updated);
       } catch (error) {
-        this.error = getPublicError(error).message;
+        if (scope === this.scopeVersion && project.id === this.selectedId)
+          this.error = getPublicError(error).message;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion && project.id === this.selectedId) this.busy = false;
       }
     },
     async approve() {
       const project = this.selected;
       if (!project || !this.plan) return;
+      const scope = this.scopeVersion;
       this.busy = true;
       this.error = '';
       try {
         const approval = await approveResearchProject(project, createIdempotencyKey('run'));
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
         this.replaceProject(approval.project);
         await this.connectRun({ ...approval.project, latest_run_id: approval.run_id });
+        await this.refreshResources(project.id);
       } catch (error) {
-        this.error = getPublicError(error).message;
+        if (scope === this.scopeVersion && project.id === this.selectedId)
+          this.error = getPublicError(error).message;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion && project.id === this.selectedId) this.busy = false;
       }
     },
     async connectRun(project: ResearchProjectV1) {
       if (!project.latest_run_id) return;
+      const scope = this.scopeVersion;
       const runs = useRunsStore();
       const record = await getRun(project.latest_run_id, useAuthStore().token);
+      if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
       runs.ensure(record.id, record.thread_id);
       runs.hydrate(record.id, record);
       if (!TERMINAL_RUN_STATUSES.has(record.status)) {
@@ -322,16 +343,25 @@ export const useResearchStore = defineStore('research', {
     async rerun() {
       const project = this.selected;
       if (!project) return;
+      const scope = this.scopeVersion;
       this.busy = true;
       this.error = '';
       try {
         const approval = await rerunResearchProject(project, createIdempotencyKey('run'));
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
         this.replaceProject(approval.project);
+        this.evidence = [];
+        this.claims = [];
+        this.steps = [];
+        this.sections = [];
+        this.metrics = null;
         await this.connectRun({ ...approval.project, latest_run_id: approval.run_id });
+        await this.refreshResources(project.id);
       } catch (error) {
-        this.error = getPublicError(error).message;
+        if (scope === this.scopeVersion && project.id === this.selectedId)
+          this.error = getPublicError(error).message;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion && project.id === this.selectedId) this.busy = false;
       }
     },
     async cloneSelected() {
@@ -357,6 +387,7 @@ export const useResearchStore = defineStore('research', {
       await this.refreshResources(projectId);
     },
     async refreshResources(projectId?: string) {
+      const scope = this.scopeVersion;
       const targetProjectId = projectId || this.selectedId;
       if (!targetProjectId) return;
       const runId = this.selected?.latest_run_id;
@@ -370,7 +401,12 @@ export const useResearchStore = defineStore('research', {
           runId ? listResearchSteps(targetProjectId, runId) : Promise.resolve([]),
           runId ? getResearchMetrics(targetProjectId, runId) : Promise.resolve(null),
         ]);
-      if (targetProjectId !== this.selectedId) return;
+      if (
+        scope !== this.scopeVersion ||
+        targetProjectId !== this.selectedId ||
+        runId !== this.selected?.latest_run_id
+      )
+        return;
       this.evidence = evidence;
       this.claims = claims;
       this.steps = steps;
@@ -380,10 +416,17 @@ export const useResearchStore = defineStore('research', {
       this.metrics = metrics;
     },
     async refreshResource(resource: 'evidence' | 'claims' | 'sections' | 'artifacts') {
+      const scope = this.scopeVersion;
       const projectId = this.selectedId;
+      const runId = this.selected?.latest_run_id;
       if (!projectId) return;
       const items = await listResearchResources(projectId, resource);
-      if (projectId !== this.selectedId) return;
+      if (
+        scope !== this.scopeVersion ||
+        projectId !== this.selectedId ||
+        runId !== this.selected?.latest_run_id
+      )
+        return;
       this[resource] = items;
     },
     async refreshSteps() {

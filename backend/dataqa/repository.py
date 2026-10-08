@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import closing
+
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
@@ -80,20 +82,16 @@ class DataQaRepository:
     def get_query(
         self, *, username: str, tenant_id: str, query_id: str
     ) -> DataQaQueryV1:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = self._owned_query(
                 db, username=username, tenant_id=tenant_id, query_id=query_id
             )
             return self._view(row)
-        finally:
-            db.close()
 
     def list_queries(
         self, *, username: str, tenant_id: str, limit: int = 50
     ) -> list[DataQaQueryV1]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             user = self._user(db, username)
             rows = (
                 db.query(DataQaQuery)
@@ -106,15 +104,10 @@ class DataQaRepository:
                 .all()
             )
             return [self._view(row) for row in rows]
-        finally:
-            db.close()
 
     def load_by_run(self, run_id: str) -> DataQaQuery | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             return db.query(DataQaQuery).filter(DataQaQuery.run_id == run_id).first()
-        finally:
-            db.close()
 
     # ------------------------------------------------------------------ 写
 
@@ -126,8 +119,7 @@ class DataQaRepository:
         candidate_schema: dict[str, Any],
     ) -> dict[str, Any]:
         """Persist the exact compact schema once so retries keep their scope."""
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(DataQaQuery)
@@ -144,8 +136,6 @@ class DataQaRepository:
                 row.version += 1
                 row.updated_at = utcnow()
                 return dict(candidate_schema)
-        finally:
-            db.close()
 
     def create_query(
         self,
@@ -156,8 +146,7 @@ class DataQaRepository:
         idempotency_key: str,
         model_snapshot: ModelCatalogSnapshot,
     ) -> QueryCreateRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user = self._user(db, username)
                 existing = (
@@ -285,12 +274,9 @@ class DataQaRepository:
                     result=None,
                 )
                 return QueryCreateRecord(view, run.id)
-        finally:
-            db.close()
 
     def mark_running(self, *, run_id: str) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(DataQaQuery)
@@ -302,15 +288,12 @@ class DataQaRepository:
                     return
                 row.status = "running"
                 row.updated_at = utcnow()
-        finally:
-            db.close()
 
     def complete_query(
         self, *, run_id: str, result: dict[str, Any], content: str
     ) -> None:
         """持久化六区块结果；assistant 消息内容也在此事务内落盘。"""
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(DataQaQuery)
@@ -335,12 +318,9 @@ class DataQaRepository:
                 row.error_code = None
                 row.version += 1
                 row.updated_at = utcnow()
-        finally:
-            db.close()
 
     def fail_query(self, *, run_id: str, error_code: str) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(DataQaQuery)
@@ -353,14 +333,11 @@ class DataQaRepository:
                 row.status = "failed"
                 row.error_code = error_code[:64]
                 row.updated_at = utcnow()
-        finally:
-            db.close()
 
     def attach_analysis(
         self, *, username: str, tenant_id: str, query_id: str, analysis: str
     ) -> DataQaQueryV1:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = self._lock_owned_query(
                     db, username=username, tenant_id=tenant_id, query_id=query_id
@@ -380,13 +357,10 @@ class DataQaRepository:
                 row.updated_at = utcnow()
                 db.flush()
                 return self._view(row)
-        finally:
-            db.close()
 
     def delete_query(self, *, username: str, tenant_id: str, query_id: str) -> bool:
         """删除已结束问数及其独占 Thread、Run、消息和事件。"""
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = self._lock_owned_query(
                     db, username=username, tenant_id=tenant_id, query_id=query_id
@@ -419,8 +393,6 @@ class DataQaRepository:
                 if thread is not None:
                     db.delete(thread)
                 return True
-        finally:
-            db.close()
 
     def _lock_owned_query(
         self, db: Session, *, username: str, tenant_id: str, query_id: str

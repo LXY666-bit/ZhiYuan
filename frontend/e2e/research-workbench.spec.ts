@@ -31,6 +31,8 @@ test('creates, plans and approves a Quick canonical research Run', async ({ page
   let lifecycle = 'draft';
   let latestRunId: string | null = null;
   let approvedRequest: Record<string, unknown> | null = null;
+  let planVersion = 1;
+  let firstStepTitle = '核验架构';
 
   const project = () => ({
     id: projectId,
@@ -90,17 +92,24 @@ test('creates, plans and approves a Quick canonical research Run', async ({ page
     });
   });
   await page.route(`**/v1/research/projects/${projectId}/plan`, async (route) => {
+    if (route.request().method() === 'PUT') {
+      const update = route.request().postDataJSON();
+      expect(update.expected_project_version).toBe(2);
+      firstStepTitle = update.steps[0].title;
+      planVersion = 2;
+      projectVersion = 3;
+    }
     await route.fulfill({
       json: {
         plan: {
           id: planId,
           project_id: projectId,
-          version: 1,
+          version: planVersion,
           objective: project().objective,
           steps: [
             {
               step_key: 'step-1',
-              title: '核验架构',
+              title: firstStepTitle,
               question: 'Research 是否复用 canonical Run？',
               sources: ['knowledge_base'],
             },
@@ -119,7 +128,7 @@ test('creates, plans and approves a Quick canonical research Run', async ({ page
   await page.route(`**/v1/research/projects/${projectId}/approve`, async (route) => {
     approvedRequest = route.request().postDataJSON();
     lifecycle = 'frozen';
-    projectVersion = 3;
+    projectVersion = 4;
     latestRunId = runId;
     await route.fulfill({
       status: 202,
@@ -136,6 +145,54 @@ test('creates, plans and approves a Quick canonical research Run', async ({ page
       },
     });
   });
+  const evidence = [
+    {
+      id: 'rev_e2e',
+      citation: 'E1',
+      title: '官方架构资料',
+      content: 'Research 复用持久化 Run。',
+      source_kind: 'web',
+      source_uri: 'https://example.com/research',
+    },
+  ];
+  const resources = {
+    evidence,
+    claims: [
+      {
+        id: 'claim_e2e',
+        verdict: 'insufficient',
+        text: '性能结论需要核验',
+        reason: '现有资料没有性能测试。',
+      },
+    ],
+    sections: [
+      {
+        id: 'section_e2e',
+        title: '架构',
+        status: 'completed',
+        content_markdown: 'Research 复用持久化 Run [E1]。',
+      },
+    ],
+    artifacts: [],
+  };
+  for (const [resource, items] of Object.entries(resources)) {
+    await page.route(`**/v1/research/projects/${projectId}/${resource}`, async (route) => {
+      await route.fulfill({ json: { items } });
+    });
+  }
+  await page.route(`**/v1/research/projects/${projectId}/steps?run_id=${runId}`, async (route) => {
+    await route.fulfill({ json: { items: [] } });
+  });
+  await page.route(
+    `**/v1/research/projects/${projectId}/metrics?run_id=${runId}`,
+    async (route) => {
+      await route.fulfill({
+        json: {
+          metrics: { elapsed_ms: 1000, input_tokens: 100, output_tokens: 50, model_calls: 3 },
+        },
+      });
+    }
+  );
 
   await page.goto('/');
   await page.getByRole('button', { name: '深度研搜' }).click();
@@ -148,10 +205,19 @@ test('creates, plans and approves a Quick canonical research Run', async ({ page
   await expect(page.getByRole('heading', { name: '知渊迁移核验' })).toBeVisible();
   await page.getByRole('button', { name: '生成研究计划' }).click();
   await expect(page.getByText('研究计划 v1')).toBeVisible({ timeout: 5_000 });
+  await page.getByLabel('步骤标题').first().fill('核验持久化架构');
+  await expect(page.getByRole('button', { name: '批准并开始研究' })).toBeDisabled();
+  await expect(page.getByText('计划有未保存修改', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: '保存为新计划版本' }).click();
+  await expect(page.getByText('研究计划 v2')).toBeVisible();
   await page.getByRole('button', { name: '批准并开始研究' }).click();
 
-  await expect(page.getByText('succeeded', { exact: true })).toBeVisible();
+  await expect(page.locator('.project-overview .status-chip')).toHaveText('已完成');
+  await page.getByText('架构 · completed').click();
+  await page.getByRole('button', { name: '查看证据 E1' }).click();
+  await expect(page.getByRole('article', { name: '引用证据详情' })).toContainText('官方架构资料');
+  await expect(page.getByText('尚未可靠核验 · 性能结论需要核验')).toBeVisible();
   const approval = approvedRequest as Record<string, unknown> | null;
-  expect(approval).toMatchObject({ expected_project_version: 2 });
+  expect(approval).toMatchObject({ expected_project_version: 3 });
   expect(String(approval?.idempotency_key || '')).toContain('run');
 });

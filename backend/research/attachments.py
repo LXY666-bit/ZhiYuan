@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 from dataclasses import dataclass
 from datetime import timedelta
 from threading import Event, Thread
@@ -76,8 +78,7 @@ class ResearchAttachmentRepository:
     def reserve_upload(
         self, *, username: str, tenant_id: str, project_id: str, upload: StoredUpload
     ) -> dict:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, user = self._owned(
                     db, username, tenant_id, project_id, lock=True
@@ -122,12 +123,9 @@ class ResearchAttachmentRepository:
                 project.updated_at = now
                 db.flush()
                 return self._view(attachment, job.id)
-        finally:
-            db.close()
 
     def list(self, *, username: str, tenant_id: str, project_id: str) -> list[dict]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, _user = self._owned(db, username, tenant_id, project_id)
             rows = (
                 db.query(ResearchAttachment)
@@ -136,8 +134,6 @@ class ResearchAttachmentRepository:
                 .all()
             )
             return [self._view(row) for row in rows]
-        finally:
-            db.close()
 
     @staticmethod
     def _view(row: ResearchAttachment, job_id: str | None = None) -> dict:
@@ -157,8 +153,7 @@ class ResearchAttachmentRepository:
     def retry(
         self, *, username: str, tenant_id: str, project_id: str, attachment_id: str
     ) -> dict:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, _user = self._owned(
                     db, username, tenant_id, project_id, lock=True
@@ -210,14 +205,11 @@ class ResearchAttachmentRepository:
                 db.add(job)
                 db.flush()
                 return self._view(attachment, job.id)
-        finally:
-            db.close()
 
     def prepare_delete(
         self, *, username: str, tenant_id: str, project_id: str, attachment_id: str
     ) -> AttachmentBuild:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, _user = self._owned(
                     db, username, tenant_id, project_id, lock=True
@@ -268,12 +260,9 @@ class ResearchAttachmentRepository:
                     attachment.storage_key,
                     attachment.vector_collection,
                 )
-        finally:
-            db.close()
 
     def finish_delete(self, build: AttachmentBuild) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(ResearchAttachment)
@@ -293,12 +282,9 @@ class ResearchAttachmentRepository:
                         status_code=409,
                     )
                 db.delete(row)
-        finally:
-            db.close()
 
     def claim(self, *, worker_id: str, lease_seconds: int) -> AttachmentBuild | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 now = utcnow()
                 query = (
@@ -344,8 +330,6 @@ class ResearchAttachmentRepository:
                     attachment.storage_key,
                     attachment.vector_collection,
                 )
-        finally:
-            db.close()
 
     def finish(
         self,
@@ -355,8 +339,7 @@ class ResearchAttachmentRepository:
         success: bool,
         error_code: str | None = None,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(ResearchAttachmentJob, ResearchAttachment)
@@ -385,8 +368,6 @@ class ResearchAttachmentRepository:
                 job.updated_at = utcnow()
                 attachment.status = "indexed" if success else "failed"
                 attachment.updated_at = utcnow()
-        finally:
-            db.close()
 
     def heartbeat(
         self,
@@ -395,8 +376,7 @@ class ResearchAttachmentRepository:
         worker_id: str,
         lease_seconds: int,
     ) -> bool:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 now = utcnow()
                 updated = (
@@ -418,8 +398,6 @@ class ResearchAttachmentRepository:
                     )
                 )
                 return updated == 1
-        finally:
-            db.close()
 
 
 class ResearchAttachmentIndexer:

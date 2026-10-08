@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 from collections.abc import Callable
 from decimal import Decimal
 from uuid import uuid4
@@ -58,20 +60,16 @@ class ModelControlRepository:
         return int(row[0])
 
     def list_profiles(self) -> tuple[ModelProfileRecord, ...]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(ModelProfile)
                 .order_by(ModelProfile.display_name.asc(), ModelProfile.id.asc())
                 .all()
             )
             return tuple(self._record(row) for row in rows)
-        finally:
-            db.close()
 
     def get_profile(self, profile_id: str) -> ModelProfileRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = db.query(ModelProfile).filter(ModelProfile.id == profile_id).first()
             if row is None:
                 raise AppError(
@@ -82,8 +80,6 @@ class ModelControlRepository:
                     stage="catalog",
                 )
             return self._record(row)
-        finally:
-            db.close()
 
     def find_profile(
         self,
@@ -92,8 +88,7 @@ class ModelControlRepository:
         model_name: str,
         base_url: str,
     ) -> ModelProfileRecord | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(ModelProfile)
                 .filter(
@@ -105,8 +100,6 @@ class ModelControlRepository:
                 .first()
             )
             return self._record(row) if row is not None else None
-        finally:
-            db.close()
 
     def create_profile(
         self,
@@ -252,8 +245,7 @@ class ModelControlRepository:
             db.close()
 
     def delete_profile(self, *, profile_id: str, username: str) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 self._user_id(db, username)
                 profile = (
@@ -284,12 +276,9 @@ class ModelControlRepository:
                         stage="assignment",
                     )
                 db.delete(profile)
-        finally:
-            db.close()
 
     def assignments(self) -> dict[ModelRole, ModelProfileRecord]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(ModelAssignment, ModelProfile)
                 .join(ModelProfile, ModelProfile.id == ModelAssignment.profile_id)
@@ -299,8 +288,6 @@ class ModelControlRepository:
                 ModelRole(assignment.role): self._record(profile)
                 for assignment, profile in rows
             }
-        finally:
-            db.close()
 
     def assign(
         self,
@@ -310,8 +297,7 @@ class ModelControlRepository:
         username: str | None,
     ) -> ModelProfileRecord:
         requirement = MODEL_ROLE_REQUIREMENTS[role]
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user_id = self._user_id(db, username)
                 profile = (
@@ -375,8 +361,6 @@ class ModelControlRepository:
                     assignment.updated_at = utcnow()
                 db.flush()
                 return self._record(profile)
-        finally:
-            db.close()
 
 
 __all__ = ["ModelControlRepository"]

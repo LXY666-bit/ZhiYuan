@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 from dataclasses import dataclass
 from datetime import UTC
 from typing import Callable
@@ -80,8 +82,7 @@ class RunEventJournal:
         worker_id: str | None = None,
         fencing_token: int | None = None,
     ) -> JournalAppend:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
                 if not run:
@@ -109,8 +110,6 @@ class RunEventJournal:
                     event_type=event_type,
                     data=data,
                 )
-        finally:
-            db.close()
 
     @staticmethod
     def _to_event(row: RunEvent, thread_id: str) -> RunEventV1:
@@ -126,8 +125,7 @@ class RunEventJournal:
         )
 
     def assert_access(self, *, username: str, run_id: str) -> str:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(Thread.thread_id)
                 .join(Run, Run.thread_ref_id == Thread.id)
@@ -138,8 +136,6 @@ class RunEventJournal:
             if not row:
                 raise AppError(ErrorCode.RUN_NOT_FOUND, "Run 不存在", status_code=404)
             return row[0]
-        finally:
-            db.close()
 
     def read_after(
         self,
@@ -149,8 +145,7 @@ class RunEventJournal:
         limit: int = 500,
         username: str | None = None,
     ) -> list[RunEventV1]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             query = (
                 db.query(RunEvent, Thread.thread_id)
                 .join(Run, Run.id == RunEvent.run_id)
@@ -169,14 +164,11 @@ class RunEventJournal:
             if username is not None and not rows:
                 self.assert_access(username=username, run_id=run_id)
             return [self._to_event(row, thread_id) for row, thread_id in rows]
-        finally:
-            db.close()
 
     def mark_outbox_published(self, outbox_id: int) -> None:
         from backend.db.models import utcnow
 
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(TransactionOutbox)
@@ -186,8 +178,6 @@ class RunEventJournal:
                 )
                 if row and row.published_at is None:
                     row.published_at = utcnow()
-        finally:
-            db.close()
 
 
 journal = RunEventJournal()

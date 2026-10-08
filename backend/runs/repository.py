@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 import hashlib
 import json
 import re
@@ -332,8 +334,7 @@ class RunRepository:
         thread_id: str,
         idempotency_key: str,
     ) -> RunReservation | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             user = db.query(User).filter(User.username == username).first()
             if not user:
                 return None
@@ -348,8 +349,6 @@ class RunRepository:
                 created=False,
                 thread_version=thread.version,
             )
-        finally:
-            db.close()
 
     def reserve(
         self,
@@ -549,8 +548,7 @@ class RunRepository:
             db.close()
 
     def get(self, *, username: str, run_id: str) -> RunRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(Run, Thread)
                 .join(Thread, Thread.id == Run.thread_ref_id)
@@ -566,12 +564,9 @@ class RunRepository:
                 )
             run, thread = row
             return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def get_internal(self, *, run_id: str) -> RunRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(Run, Thread)
                 .join(Thread, Thread.id == Run.thread_ref_id)
@@ -586,20 +581,15 @@ class RunRepository:
                 )
             run, thread = row
             return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def has_durable_checkpoint(self, *, run_id: str) -> bool:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             return (
                 db.query(RunCheckpoint.id)
                 .filter(RunCheckpoint.run_id == run_id)
                 .first()
                 is not None
             )
-        finally:
-            db.close()
 
     def release_research_for_recovery(
         self,
@@ -609,8 +599,7 @@ class RunRepository:
         fencing_token: int,
         lease_expired_before: datetime | None = None,
     ) -> RunRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(Run, Thread)
@@ -670,12 +659,9 @@ class RunRepository:
                         message.status = "streaming"
                         message.updated_at = utcnow()
                 return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def find_pending(self, *, username: str, thread_id: str) -> RunRecord | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(Run, Thread)
                 .join(Thread, Thread.id == Run.thread_ref_id)
@@ -692,12 +678,9 @@ class RunRepository:
                 return None
             run, thread = row
             return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def list_pending(self, *, limit: int = 500) -> list[tuple[str, RunRecord]]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(Run, Thread, User)
                 .join(Thread, Thread.id == Run.thread_ref_id)
@@ -711,8 +694,6 @@ class RunRepository:
                 (user.username, self._record(run, thread.thread_id))
                 for run, thread, user in rows
             ]
-        finally:
-            db.close()
 
     def load_execution_snapshot(
         self,
@@ -722,8 +703,7 @@ class RunRepository:
         worker_id: str,
         fencing_token: int,
     ) -> RunExecutionSnapshot:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(Run, Thread, User)
                 .join(Thread, Thread.id == Run.thread_ref_id)
@@ -812,8 +792,6 @@ class RunRepository:
                 ),
                 model_snapshot=model_snapshot,
             )
-        finally:
-            db.close()
 
     def pin_skill_activation(
         self,
@@ -1066,8 +1044,7 @@ class RunRepository:
     ) -> RunRecord:
         now = utcnow()
         lease_seconds = lease_seconds or get_settings().worker.lease_seconds
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
                 if not run:
@@ -1110,8 +1087,6 @@ class RunRepository:
                 )
                 db.flush()
                 return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def heartbeat(
         self,
@@ -1122,8 +1097,7 @@ class RunRepository:
         lease_seconds: int | None = None,
     ) -> RunRecord:
         lease_seconds = lease_seconds or get_settings().worker.lease_seconds
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
                 if not run:
@@ -1144,8 +1118,6 @@ class RunRepository:
                 run.updated_at = utcnow()
                 thread = db.query(Thread).filter(Thread.id == run.thread_ref_id).first()
                 return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def set_waiting_input(
         self,
@@ -1154,8 +1126,7 @@ class RunRepository:
         worker_id: str,
         fencing_token: int,
     ) -> RunRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
                 if not run:
@@ -1190,12 +1161,9 @@ class RunRepository:
                     data={"status": run.status},
                 )
                 return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def mark_cancelling(self, *, username: str, run_id: str) -> RunRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 row = (
                     db.query(Run, Thread)
@@ -1227,8 +1195,6 @@ class RunRepository:
                     },
                 )
                 return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     @staticmethod
     def _message_status(target: str, partial: bool) -> str:
@@ -1285,8 +1251,7 @@ class RunRepository:
         if target not in TERMINAL_RUN_STATUSES:
             raise ValueError("finalize target must be terminal")
         now = utcnow()
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
                 if not run:
@@ -1399,8 +1364,6 @@ class RunRepository:
                 self._promote_next_queued(db, thread, now)
                 db.flush()
                 return self._record(run, thread.thread_id)
-        finally:
-            db.close()
 
     def reconcile_orphans(self, *, now: datetime | None = None) -> list[str]:
         now = now or utcnow()

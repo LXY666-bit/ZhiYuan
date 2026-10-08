@@ -90,6 +90,7 @@
 import { nextTick, onBeforeUnmount, ref } from 'vue';
 import { fetchArtifact, isFetchableArtifactUri } from '@/artifacts/artifactClient';
 import type { RunArtifactState } from '@/events/runEventReducer';
+import { trapDialogFocus } from '@/utils/dialogFocus';
 import { getPublicError } from '@/utils/api';
 
 defineProps<{
@@ -162,37 +163,18 @@ const closePreview = async () => {
   if (target?.isConnected) target.focus();
 };
 
-const trapFocus = (event: KeyboardEvent) => {
-  const dialog = dialogRef.value;
-  if (!dialog) return;
-  const focusable = Array.from(
-    dialog.querySelectorAll<HTMLElement>(
-      'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    )
-  );
-  if (!focusable.length) {
-    event.preventDefault();
-    dialog.focus();
-    return;
-  }
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-};
-
 const handleDialogKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') {
     event.preventDefault();
     event.stopPropagation();
     void closePreview();
   } else if (event.key === 'Tab') {
-    trapFocus(event);
+    trapDialogFocus(
+      event,
+      dialogRef.value,
+      'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      true
+    );
   }
 };
 

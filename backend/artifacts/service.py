@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 import hashlib
 import os
 import re
@@ -233,18 +235,14 @@ class ArtifactService:
         return row
 
     def write(self, **kwargs: Any) -> ArtifactRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 return self._record(self.write_in_session(db, **kwargs))
-        finally:
-            db.close()
 
     def get_owned(
         self, *, username: str, tenant_id: str, artifact_id: str
     ) -> tuple[ArtifactRecord, Path]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             row = (
                 db.query(Artifact)
                 .join(User, User.id == Artifact.user_id)
@@ -261,8 +259,6 @@ class ArtifactService:
             if not path.is_file():
                 raise AppError(ErrorCode.NOT_FOUND, "Artifact 不存在", status_code=404)
             return self._record(row), path
-        finally:
-            db.close()
 
 
 artifact_service = ArtifactService()

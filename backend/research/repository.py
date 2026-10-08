@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 import hashlib
 import json
 import re
@@ -40,7 +42,11 @@ from backend.research.generated.research_api_v1 import (
     ResearchPlanV1,
     ResearchProjectV1,
 )
-from backend.research.profiles import resolve_research_profile
+from backend.research.profiles import (
+    PROMPT_VERSION,
+    WORKFLOW_VERSION,
+    resolve_research_profile,
+)
 from backend.runs.state import ACTIVE_RUN_STATUSES, RunStatus
 
 
@@ -207,8 +213,7 @@ class ResearchRepository:
         now = utcnow()
         project_id = f"rproj_{uuid4().hex}"
         thread_id = f"research:{uuid4().hex}"
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user = self._user(db, username)
                 thread = Thread(
@@ -244,14 +249,11 @@ class ResearchRepository:
                 db.add(project)
                 db.flush()
                 return self._project_view(db, project, thread)
-        finally:
-            db.close()
 
     def list_projects(
         self, *, username: str, tenant_id: str
     ) -> list[ResearchProjectV1]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             rows = (
                 db.query(ResearchProject, Thread)
                 .join(Thread, Thread.id == ResearchProject.thread_ref_id)
@@ -265,20 +267,15 @@ class ResearchRepository:
                 .all()
             )
             return [self._project_view(db, project, thread) for project, thread in rows]
-        finally:
-            db.close()
 
     def get_project(
         self, *, username: str, tenant_id: str, project_id: str
     ) -> ResearchProjectV1:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, thread, _ = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
             return self._project_view(db, project, thread)
-        finally:
-            db.close()
 
     def write_plan(
         self,
@@ -290,8 +287,7 @@ class ResearchRepository:
         steps: list[ResearchPlanStepV1],
         origin: str,
     ) -> ResearchPlanV1:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, _thread, user = self._owned_project(
                     db,
@@ -341,14 +337,11 @@ class ResearchRepository:
                 project.updated_at = utcnow()
                 db.flush()
                 return self._plan_view(row)
-        finally:
-            db.close()
 
     def get_plan(
         self, *, username: str, tenant_id: str, project_id: str
     ) -> ResearchPlanV1:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, _thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -365,8 +358,6 @@ class ResearchRepository:
                 .one()
             )
             return self._plan_view(row)
-        finally:
-            db.close()
 
     def create_plan_job(
         self,
@@ -378,8 +369,7 @@ class ResearchRepository:
         expected_project_version: int,
         model_snapshot: ModelCatalogSnapshot,
     ) -> PlanJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, _thread, _user = self._owned_project(
                     db,
@@ -441,14 +431,11 @@ class ResearchRepository:
                 db.add(job)
                 db.flush()
                 return self._job_view(job)
-        finally:
-            db.close()
 
     def get_plan_job(
         self, *, username: str, tenant_id: str, project_id: str, job_id: str
     ) -> PlanJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, _thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -463,14 +450,11 @@ class ResearchRepository:
             if row is None:
                 raise AppError(ErrorCode.NOT_FOUND, "Plan Job 不存在", status_code=404)
             return self._job_view(row)
-        finally:
-            db.close()
 
     def cancel_plan_job(
         self, *, username: str, tenant_id: str, project_id: str, job_id: str
     ) -> PlanJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, _thread, _user = self._owned_project(
                     db, username=username, tenant_id=tenant_id, project_id=project_id
@@ -495,14 +479,11 @@ class ResearchRepository:
                     row.status = "cancelling"
                 row.updated_at = utcnow()
                 return self._job_view(row)
-        finally:
-            db.close()
 
     def claim_plan_job(
         self, *, worker_id: str, lease_seconds: int
     ) -> tuple[PlanJobRecord, str, str, str, list[str], dict] | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 now = utcnow()
                 query = (
@@ -549,26 +530,20 @@ class ResearchRepository:
                     ),
                     dict(job.model_snapshot_json or {}),
                 )
-        finally:
-            db.close()
 
     def plan_job_cancel_requested(self, job_id: str) -> bool:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             status = (
                 db.query(ResearchPlanJob.status)
                 .filter(ResearchPlanJob.id == job_id)
                 .scalar()
             )
             return status in {"cancelling", "cancelled"}
-        finally:
-            db.close()
 
     def heartbeat_plan_job(
         self, *, job_id: str, worker_id: str, fencing_token: int, lease_seconds: int
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 now = utcnow()
                 updated = (
@@ -595,8 +570,6 @@ class ResearchRepository:
                         "Plan Job ownership 已失效",
                         status_code=409,
                     )
-        finally:
-            db.close()
 
     def finish_plan_job(
         self,
@@ -611,8 +584,7 @@ class ResearchRepository:
         duration_ms: int = 0,
         error_code: str | None = None,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(ResearchPlanJob)
@@ -699,8 +671,6 @@ class ResearchRepository:
                 job.owner_worker_id = None
                 job.lease_expires_at = None
                 job.updated_at = now
-        finally:
-            db.close()
 
     def fail_plan_job(
         self,
@@ -711,8 +681,7 @@ class ResearchRepository:
         error_code: str,
         duration_ms: int,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(ResearchPlanJob)
@@ -751,8 +720,6 @@ class ResearchRepository:
                 job.owner_worker_id = None
                 job.lease_expires_at = None
                 job.updated_at = now
-        finally:
-            db.close()
 
     def approve(
         self,
@@ -765,8 +732,7 @@ class ResearchRepository:
         model_snapshot: ModelCatalogSnapshot,
         allow_frozen: bool = False,
     ) -> ApprovalRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, thread, user = self._owned_project(
                     db,
@@ -862,8 +828,8 @@ class ResearchRepository:
                     "sources": project.source_config_json,
                     "output": project.output_format_json,
                     "attachment_versions": [row.version_key for row in attachments],
-                    "prompt_version": "research-prompts-v1",
-                    "workflow_version": "research-workflow-v1",
+                    "prompt_version": PROMPT_VERSION,
+                    "workflow_version": WORKFLOW_VERSION,
                     "model_catalog_hash": model_snapshot.catalog_hash,
                 }
                 encoded = json.dumps(
@@ -888,8 +854,7 @@ class ResearchRepository:
                     on_disconnect="continue",
                     multitask_strategy="reject",
                     fencing_token=1,
-                    deadline_at=now
-                    + timedelta(seconds=profile["writing_budget_seconds"]),
+                    deadline_at=now + timedelta(seconds=profile["run_budget_seconds"]),
                     input_tokens=0,
                     output_tokens=0,
                     cost=Decimal("0"),
@@ -958,14 +923,11 @@ class ResearchRepository:
                 return ApprovalRecord(
                     self._project_view(db, project, thread), run.id, thread.version
                 )
-        finally:
-            db.close()
 
     def list_runs(
         self, *, username: str, tenant_id: str, project_id: str
     ) -> list[dict]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -990,8 +952,6 @@ class ResearchRepository:
                 }
                 for row in rows
             ]
-        finally:
-            db.close()
 
     def list_evidence(
         self,
@@ -1001,8 +961,7 @@ class ResearchRepository:
         project_id: str,
         run_id: str | None = None,
     ) -> list[dict]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             _project, thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -1038,8 +997,6 @@ class ResearchRepository:
                 }
                 for row in rows
             ]
-        finally:
-            db.close()
 
     def list_steps(
         self,
@@ -1049,8 +1006,7 @@ class ResearchRepository:
         project_id: str,
         run_id: str | None = None,
     ) -> list[dict]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             _project, thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -1081,6 +1037,7 @@ class ResearchRepository:
                     "evidence_count": int(
                         (row.detail_json or {}).get("evidence_count", 0)
                     ),
+                    "phase": (row.detail_json or {}).get("phase"),
                     "evidence_ids": [
                         value
                         for value in (row.detail_json or {}).get("evidence_ids", [])
@@ -1099,8 +1056,6 @@ class ResearchRepository:
                 }
                 for row in rows
             ]
-        finally:
-            db.close()
 
     def list_sections(
         self,
@@ -1110,8 +1065,7 @@ class ResearchRepository:
         project_id: str,
         run_id: str | None = None,
     ) -> list[dict]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             _project, thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -1146,8 +1100,6 @@ class ResearchRepository:
                 }
                 for row in rows
             ]
-        finally:
-            db.close()
 
     def list_claims(
         self,
@@ -1157,8 +1109,7 @@ class ResearchRepository:
         project_id: str,
         run_id: str | None = None,
     ) -> list[dict]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             _project, thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -1191,14 +1142,11 @@ class ResearchRepository:
                 }
                 for row in rows
             ]
-        finally:
-            db.close()
 
     def list_artifacts(
         self, *, username: str, tenant_id: str, project_id: str
     ) -> list[dict]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, _thread, user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -1230,8 +1178,6 @@ class ResearchRepository:
                 }
                 for row in rows
             ]
-        finally:
-            db.close()
 
     def metrics(
         self,
@@ -1241,8 +1187,7 @@ class ResearchRepository:
         project_id: str,
         run_id: str | None = None,
     ) -> dict:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -1270,8 +1215,14 @@ class ResearchRepository:
                 .one()
             )
             run = None
+            manifest = None
             if run_id is not None:
                 run = db.query(Run).filter(Run.id == run_id).one()
+                manifest = (
+                    db.query(ResearchRunManifest)
+                    .filter(ResearchRunManifest.run_id == run_id)
+                    .one()
+                )
             now = utcnow()
             elapsed_ms = 0
             if run is not None and run.started_at is not None:
@@ -1283,6 +1234,26 @@ class ResearchRepository:
                     ),
                 )
             return {
+                "workflow_version": (manifest.manifest_json or {}).get(
+                    "workflow_version"
+                )
+                if manifest
+                else None,
+                "profile_version": (
+                    (manifest.manifest_json or {}).get("profile") or {}
+                ).get("profile_version")
+                if manifest
+                else None,
+                "run_budget_seconds": (
+                    (manifest.manifest_json or {}).get("profile") or {}
+                ).get(
+                    "run_budget_seconds",
+                    ((manifest.manifest_json or {}).get("profile") or {}).get(
+                        "writing_budget_seconds"
+                    ),
+                )
+                if manifest
+                else None,
                 "run_count": len(run_ids),
                 "evidence_count": db.query(func.count(ResearchEvidence.id))
                 .filter(ResearchEvidence.run_id.in_(run_ids))
@@ -1305,14 +1276,11 @@ class ResearchRepository:
                 "duration_ms": int(usage[3]),
                 "elapsed_ms": elapsed_ms,
             }
-        finally:
-            db.close()
 
     def clone_project(
         self, *, username: str, tenant_id: str, project_id: str
     ) -> ResearchProjectV1:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             project, _thread, _user = self._owned_project(
                 db, username=username, tenant_id=tenant_id, project_id=project_id
             )
@@ -1327,12 +1295,9 @@ class ResearchRepository:
                     (project.output_format_json or {}).get("formats") or ["markdown"]
                 ),
             )
-        finally:
-            db.close()
 
     def soft_delete(self, *, username: str, tenant_id: str, project_id: str) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 project, thread, _user = self._owned_project(
                     db,
@@ -1355,8 +1320,6 @@ class ResearchRepository:
                 project.deleted_at = utcnow()
                 project.version += 1
                 thread.status = "archived"
-        finally:
-            db.close()
 
 
 research_repository = ResearchRepository()

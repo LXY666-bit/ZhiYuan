@@ -16,9 +16,7 @@ def test_tavily_search():
 
     # 执行搜索
     response = tavily.search(
-        query="什么是 Tavily 搜索API？",
-        search_depth="basic",
-        max_results=3
+        query="什么是 Tavily 搜索API？", search_depth="basic", max_results=3
     )
 
     # 打印结果

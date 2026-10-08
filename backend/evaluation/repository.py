@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import closing
+
 import logging
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -206,8 +208,7 @@ class RagEvaluationRepository:
         dataset: RagEvalDataset,
     ) -> RagEvaluationDatasetRecord:
         fingerprint = dataset_fingerprint(dataset)
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user = self._user(db, username)
                 existing = (
@@ -236,14 +237,11 @@ class RagEvaluationRepository:
                 db.add(row)
                 db.flush()
                 return self._dataset_record(row, user.username)
-        finally:
-            db.close()
 
     def list_datasets(
         self, *, limit: int = 100
     ) -> tuple[RagEvaluationDatasetRecord, ...]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             creator = aliased(User)
             rows = (
                 db.query(RagEvaluationDatasetRow, creator.username)
@@ -256,12 +254,9 @@ class RagEvaluationRepository:
                 .all()
             )
             return tuple(self._dataset_record(row, username) for row, username in rows)
-        finally:
-            db.close()
 
     def get_dataset(self, dataset_id: str) -> RagEvaluationDatasetRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             creator = aliased(User)
             result = (
                 db.query(RagEvaluationDatasetRow, creator.username)
@@ -281,8 +276,6 @@ class RagEvaluationRepository:
                     stage="dataset",
                 )
             return self._dataset_record(*result)
-        finally:
-            db.close()
 
     def create_job(
         self,
@@ -294,8 +287,7 @@ class RagEvaluationRepository:
         baseline_job_id: str | None = None,
         max_attempts: int = 3,
     ) -> RagEvaluationJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 user = self._user(db, username)
                 dataset = (
@@ -376,8 +368,6 @@ class RagEvaluationRepository:
                     )
                 db.flush()
                 return self._job_record(job, dataset, user.username)
-        finally:
-            db.close()
 
     def list_jobs(
         self,
@@ -385,8 +375,7 @@ class RagEvaluationRepository:
         status: RagEvaluationJobStatus | str | None = None,
         limit: int = 100,
     ) -> tuple[RagEvaluationJobRecord, ...]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             creator = aliased(User)
             query = (
                 db.query(RagEvaluationJobRow, RagEvaluationDatasetRow, creator.username)
@@ -412,12 +401,9 @@ class RagEvaluationRepository:
                 self._job_record(job, dataset, username)
                 for job, dataset, username in rows
             )
-        finally:
-            db.close()
 
     def get_job(self, job_id: str) -> RagEvaluationJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             creator = aliased(User)
             result = (
                 db.query(RagEvaluationJobRow, RagEvaluationDatasetRow, creator.username)
@@ -441,12 +427,9 @@ class RagEvaluationRepository:
                     stage="job",
                 )
             return self._job_record(*result)
-        finally:
-            db.close()
 
     def list_cases(self, job_id: str) -> tuple[RagEvaluationCaseRecord, ...]:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             exists = (
                 db.query(RagEvaluationJobRow.id)
                 .filter(RagEvaluationJobRow.id == job_id)
@@ -467,12 +450,9 @@ class RagEvaluationRepository:
                 .all()
             )
             return tuple(self._case_record(row) for row in rows)
-        finally:
-            db.close()
 
     def cancel(self, *, job_id: str) -> RagEvaluationJobRecord:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -500,8 +480,6 @@ class RagEvaluationRepository:
                     .scalar()
                 )
                 return self._job_record(job, dataset, creator)
-        finally:
-            db.close()
 
     def reconcile_expired(self, *, now: datetime | None = None) -> tuple[str, ...]:
         current = now or utcnow()
@@ -648,8 +626,7 @@ class RagEvaluationRepository:
         lease_seconds: int,
     ) -> ClaimedRagEvaluationJob | None:
         self.reconcile_expired()
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -694,8 +671,6 @@ class RagEvaluationRepository:
                     dataset=self._dataset_record(dataset, dataset_creator),
                     cases=tuple(self._case_record(row) for row in cases),
                 )
-        finally:
-            db.close()
 
     def heartbeat(
         self,
@@ -705,8 +680,7 @@ class RagEvaluationRepository:
         fencing_token: int,
         lease_seconds: int,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -719,8 +693,6 @@ class RagEvaluationRepository:
                 job.heartbeat_at = now
                 job.lease_expires_at = now + timedelta(seconds=max(10, lease_seconds))
                 job.updated_at = now
-        finally:
-            db.close()
 
     def claim_case(
         self,
@@ -729,8 +701,7 @@ class RagEvaluationRepository:
         worker_id: str,
         fencing_token: int,
     ) -> RagEvaluationCaseRecord | None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -759,8 +730,6 @@ class RagEvaluationRepository:
                 case.started_at = now
                 case.updated_at = now
                 return self._case_record(case)
-        finally:
-            db.close()
 
     def complete_case(
         self,
@@ -776,8 +745,7 @@ class RagEvaluationRepository:
         retrieved_identities: list[dict],
         duration_ms: int,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -831,8 +799,6 @@ class RagEvaluationRepository:
                 case.updated_at = now
                 job.completed_cases += 1
                 job.updated_at = now
-        finally:
-            db.close()
 
     def fail_job(
         self,
@@ -845,8 +811,7 @@ class RagEvaluationRepository:
         case_id: str | None = None,
         report: RagEvalReport | None = None,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -904,8 +869,6 @@ class RagEvaluationRepository:
                     },
                     synchronize_session=False,
                 )
-        finally:
-            db.close()
 
     def finish_job(
         self,
@@ -915,8 +878,7 @@ class RagEvaluationRepository:
         fencing_token: int,
         report: RagEvalReport,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -961,8 +923,6 @@ class RagEvaluationRepository:
                 job.owner_worker_id = None
                 job.lease_expires_at = None
                 job.updated_at = now
-        finally:
-            db.close()
 
     def observations(self, job_id: str) -> tuple[RagEvalObservation, ...]:
         cases = self.list_cases(job_id)
@@ -994,8 +954,7 @@ class RagEvaluationRepository:
         return job.report
 
     def cancel_requested(self, job_id: str) -> bool:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             status = (
                 db.query(RagEvaluationJobRow.status)
                 .filter(RagEvaluationJobRow.id == job_id)
@@ -1005,8 +964,6 @@ class RagEvaluationRepository:
                 RagEvaluationJobStatus.CANCELLING.value,
                 RagEvaluationJobStatus.CANCELLED.value,
             }
-        finally:
-            db.close()
 
     def finish_cancelled(
         self,
@@ -1015,8 +972,7 @@ class RagEvaluationRepository:
         worker_id: str,
         fencing_token: int,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 job = (
                     db.query(RagEvaluationJobRow)
@@ -1026,8 +982,6 @@ class RagEvaluationRepository:
                 )
                 self._assert_owner(job, worker_id, fencing_token)
                 self._cancel_locked(db, job)
-        finally:
-            db.close()
 
     def worker_heartbeat(
         self,
@@ -1036,8 +990,7 @@ class RagEvaluationRepository:
         status: str,
         metadata: dict | None = None,
     ) -> None:
-        db = self._session_factory()
-        try:
+        with closing(self._session_factory()) as db:
             with db.begin():
                 now = utcnow()
                 row = (
@@ -1065,8 +1018,6 @@ class RagEvaluationRepository:
                 row.stopped_at = now if status == "stopped" else None
                 row.metadata_json = dict(metadata or {})
                 row.updated_at = now
-        finally:
-            db.close()
 
     @staticmethod
     def _assert_owner(

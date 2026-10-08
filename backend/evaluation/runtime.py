@@ -7,7 +7,12 @@ from dataclasses import dataclass
 
 from pydantic import Field
 
-from backend.agent.models import ModelRegistry, ModelRole, model_registry
+from backend.agent.models import (
+    ModelRegistry,
+    ModelRole,
+    model_registry,
+    structured_output,
+)
 from backend.agent.runtime import extract_message_content
 from backend.core.settings import get_settings
 from backend.evaluation.rag import (
@@ -307,7 +312,7 @@ class RagEvaluationRuntime:
             + json.dumps(payload, ensure_ascii=False, sort_keys=True)
         )
         return self.executor.call(
-            lambda: model.with_structured_output(RagJudgeDecision).invoke(
+            lambda: structured_output(model, RagJudgeDecision).invoke(
                 [{"role": "user", "content": prompt}]
             ),
             context=ProviderCallContext(

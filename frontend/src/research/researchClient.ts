@@ -50,6 +50,7 @@ export interface ResearchStepResource {
   step_key: string;
   position: number;
   status: 'pending' | 'running' | 'completed' | 'degraded' | 'failed';
+  phase?: 'retrieving' | 'writing' | 'verifying' | 'completed' | null;
   evidence_count: number;
   evidence_ids: string[];
   source_stats?: Partial<Record<ResearchSource, ResearchSourceStats>>;
@@ -59,6 +60,7 @@ export interface ResearchStepResource {
 }
 
 export interface ResearchMetrics {
+  run_budget_seconds?: number | null;
   run_count: number;
   evidence_count: number;
   claim_count: number;

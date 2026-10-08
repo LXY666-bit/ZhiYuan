@@ -63,16 +63,6 @@ class ManagedSkillResponse(CapabilitySchema):
     updated_at: datetime
 
 
-class ManagedSkillCreateRequest(CapabilitySchema):
-    name: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=64)
-    description: str = Field(min_length=1, max_length=500)
-    instructions: str = Field(min_length=1, max_length=262_144)
-    allowed_tools: tuple[str, ...] = Field(default=(), max_length=128)
-    required_roles: tuple[str, ...] = Field(default=(), max_length=32)
-    required_secrets: tuple[str, ...] = Field(default=(), max_length=32)
-    enabled: bool = True
-
-
 class ManagedSkillUpdateRequest(CapabilitySchema):
     description: str = Field(min_length=1, max_length=500)
     instructions: str = Field(min_length=1, max_length=262_144)
@@ -80,6 +70,10 @@ class ManagedSkillUpdateRequest(CapabilitySchema):
     required_roles: tuple[str, ...] = Field(default=(), max_length=32)
     required_secrets: tuple[str, ...] = Field(default=(), max_length=32)
     enabled: bool = True
+
+
+class ManagedSkillCreateRequest(ManagedSkillUpdateRequest):
+    name: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=64)
 
 
 class ManagedHttpToolResponse(CapabilitySchema):
@@ -102,23 +96,6 @@ class ManagedHttpToolResponse(CapabilitySchema):
     updated_at: datetime
 
 
-class ManagedHttpToolCreateRequest(CapabilitySchema):
-    name: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$", max_length=128)
-    description: str = Field(min_length=1, max_length=1_000)
-    group: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$", max_length=128)
-    endpoint: str = Field(min_length=1, max_length=2_048)
-    method: Literal["GET", "POST"] = "POST"
-    input_schema: dict[str, Any]
-    static_headers: dict[str, str] = Field(default_factory=dict, max_length=32)
-    secret_headers: dict[str, str] = Field(default_factory=dict, max_length=16)
-    required_roles: tuple[str, ...] = Field(default=(), max_length=32)
-    requires_approval: bool = False
-    idempotent: bool = True
-    timeout_seconds: float = Field(default=20.0, gt=0, le=120)
-    max_response_bytes: int = Field(default=262_144, ge=1_024, le=8_388_608)
-    enabled: bool = True
-
-
 class ManagedHttpToolUpdateRequest(CapabilitySchema):
     description: str = Field(min_length=1, max_length=1_000)
     group: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$", max_length=128)
@@ -133,6 +110,10 @@ class ManagedHttpToolUpdateRequest(CapabilitySchema):
     timeout_seconds: float = Field(default=20.0, gt=0, le=120)
     max_response_bytes: int = Field(default=262_144, ge=1_024, le=8_388_608)
     enabled: bool = True
+
+
+class ManagedHttpToolCreateRequest(ManagedHttpToolUpdateRequest):
+    name: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,127}$", max_length=128)
 
 
 class SqlAssistantConfigResponse(CapabilitySchema):

@@ -63,7 +63,7 @@ class _FakeModel:
         self.decision = decision
         self.text = text
 
-    def with_structured_output(self, _schema: Any) -> _FakeModel:
+    def with_structured_output(self, _schema: Any, *, method) -> _FakeModel:
         return self
 
     def invoke(self, _messages: Any) -> Any:

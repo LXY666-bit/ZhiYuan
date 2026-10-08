@@ -66,19 +66,10 @@ export const useModelStore = defineStore('models', {
     },
 
     async deleteProfile(profileId: string) {
-      this.saving = true;
-      this.error = '';
-      try {
+      await this.runMutation(async () => {
         await deleteModelProfile(profileId);
-        await this.fetchControlPlane();
-        this.notice = 'Model Profile 已删除';
-      } catch (error) {
-        const publicError = getPublicError(error);
-        this.error = publicError.message;
-        throw publicError;
-      } finally {
-        this.saving = false;
-      }
+        return this.fetchControlPlane();
+      }, 'Model Profile 已删除');
     },
 
     async assignRole(role: ModelRole, profileId: string) {

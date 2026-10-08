@@ -244,6 +244,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import {
+  networkLabel,
+  scopeLabel,
   skillDisplayIcon,
   skillDisplayName,
   skillDisplaySummary,
@@ -253,6 +255,7 @@ import type {
   CapabilityAvailabilityFilter,
   CapabilityAvailabilityReason,
 } from '@/types/capabilities';
+import { trapDialogFocus } from '@/utils/dialogFocus';
 import { getPublicError } from '@/utils/api';
 
 const store = useCapabilityStore();
@@ -313,32 +316,16 @@ const retry = () => void store.retryCatalog().catch(() => undefined);
 
 const closeCenter = () => store.closeCenter();
 
-const trapFocus = (event: KeyboardEvent) => {
-  const dialog = dialogRef.value;
-  if (!dialog) return;
-  const focusable = Array.from(
-    dialog.querySelectorAll<HTMLElement>(
-      'input, button:not(:disabled), [tabindex]:not([tabindex="-1"])'
-    )
-  );
-  if (!focusable.length) return;
-  const first = focusable[0];
-  const last = focusable[focusable.length - 1];
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault();
-    first.focus();
-  }
-};
-
 const handleDialogKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') {
     event.preventDefault();
     closeCenter();
   } else if (event.key === 'Tab') {
-    trapFocus(event);
+    trapDialogFocus(
+      event,
+      dialogRef.value,
+      'input, button:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    );
   }
 };
 
@@ -371,26 +358,6 @@ const unavailableTitle = (available: boolean, reason: CapabilityAvailabilityReas
   return reason === 'permission_required'
     ? '当前账号没有使用该能力所需的角色'
     : '该能力所需的运行配置尚未就绪';
-};
-
-const networkLabel = (policy: string) => {
-  const labels: Record<string, string> = {
-    none: '无网络',
-    restricted: '受限公网',
-    'private-data': '私有数据网络',
-  };
-  return labels[policy] || policy;
-};
-
-const scopeLabel = (scope: string) => {
-  const labels: Record<string, string> = {
-    none: '无额外资源',
-    'public-web': '公开网页',
-    'private-data-read': '私有数据只读',
-    'code-execution': '隔离代码执行',
-    'knowledge-read': '知识库只读',
-  };
-  return labels[scope] || scope;
 };
 
 const exposureLabel = (exposure: string) => {

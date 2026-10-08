@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,7 +15,10 @@ import requests
 
 
 ROOT = Path(__file__).resolve().parent
+if not __package__:
+    sys.path.insert(0, str(ROOT.parents[1]))
 PROFILES = {"quick": (2, 3, 12), "standard": (3, 5, 30), "deep": (4, 6, 50)}
+SCORING_VERSION = 2
 LIVE_GATE_CASES = {"tech-01", "tech-04", "tech-11", "tech-13", "tech-14"}
 
 
@@ -28,7 +32,20 @@ def load_cases() -> list[dict]:
 
 def dataset_fingerprint(cases: list[dict]) -> str:
     encoded = json.dumps(
-        cases, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        {
+            "cases": cases,
+            "sources": {
+                source: hashlib.sha256(
+                    (ROOT / "sources" / f"{source}.md").read_bytes()
+                ).hexdigest()
+                for source in sorted(
+                    {source for case in cases for source in case["sources"]}
+                )
+            },
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     return hashlib.sha256(encoded.encode()).hexdigest()
 
@@ -45,31 +62,94 @@ def validate(cases: list[dict]) -> None:
 
 
 def deterministic_case(case: dict, mode: str) -> dict:
-    minimum, maximum, evidence_limit = PROFILES[mode]
-    evidence = case["sources"][:evidence_limit]
+    from evals.research.offline import observe_case
+
+    observation = observe_case(case, mode, ROOT / "sources")
+    return score_observation(case, mode, **observation, deterministic=True)
+
+
+def score_observation(
+    case: dict,
+    mode: str,
+    *,
+    report: str,
+    completed: bool,
+    plan_steps: int,
+    evidence: list[dict],
+    claims: list[dict],
+    sections: list[dict],
+    metrics: dict,
+    deterministic: bool,
+) -> dict:
+    body = re.split(r"(?m)^## 证据与来源\s*$", report, maxsplit=1)[0]
+    citations = set(re.findall(r"\[(E\d+)\]", body))
+    valid = {item["citation"] for item in evidence}
+    # Coverage is measured per prose paragraph / list item, excluding headings,
+    # code, disclosure blockquotes and the bibliography. It is not semantic entailment.
+    units = []
+    in_code = False
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("```"):
+            in_code = not in_code
+            continue
+        if (
+            in_code
+            or not line
+            or line.startswith(("#", ">"))
+            or re.fullmatch(r"[\s|:\-]+", line)
+        ):
+            continue
+        if any(
+            word in line
+            for word in ("证据不足", "证据缺口", "没有足够", "生成失败", "未完成")
+        ):
+            continue
+        units.append(line)
+    covered = sum(bool(set(re.findall(r"\[(E\d+)\]", unit)) & valid) for unit in units)
+    source_ids = {Path(str(item.get("title") or "")).stem for item in evidence}
+    conflicts = any(item["verdict"] == "conflicting" for item in claims)
+    gaps = any(item["verdict"] in {"unsupported", "insufficient"} for item in claims)
     return {
         "case_id": case["id"],
         "mode": mode,
-        "completed": True,
-        "plan_steps": minimum,
-        "plan_legal": minimum <= maximum,
-        "citation_coverage": 1.0 if evidence else 0.0,
-        "citation_validity": 1.0,
-        "expected_source_hit_rate": len(
-            set(case["required_source_ids"]) & set(evidence)
-        )
+        "completed": completed,
+        "plan_steps": plan_steps,
+        "plan_legal": PROFILES[mode][0] <= plan_steps <= PROFILES[mode][1],
+        "citation_coverage": covered / max(1, len(units)),
+        "citation_validity": len(citations & valid) / max(1, len(citations)),
+        "expected_source_hit_rate": len(set(case["required_source_ids"]) & source_ids)
         / max(1, len(case["required_source_ids"])),
-        "conflict_recognition": 1.0 if case["has_conflict"] else None,
-        "unsupported_claim_ratio": 1 / max(1, len(case["expected_claims"]))
+        "expected_topic_coverage": sum(
+            topic.casefold() in body.casefold() for topic in case["expected_topics"]
+        )
+        / max(1, len(case["expected_topics"])),
+        "conflict_recognition": float(conflicts and "冲突" in body)
+        if case["has_conflict"]
+        else None,
+        "gap_recognition": float(
+            gaps and any(word in body for word in ("不足", "缺口", "核验"))
+        )
         if case["has_gap"]
-        else 0.0,
-        "section_success_rate": 1.0,
-        "writer_degraded": False,
-        "total_tokens": 0,
-        "elapsed_ms": 0,
-        "deterministic": True,
-        "workflow_version": "research-workflow-v1",
-        "profile_version": 4,
+        else None,
+        "unsupported_claim_ratio": sum(
+            item["verdict"] == "unsupported" for item in claims
+        )
+        / max(1, len(claims)),
+        "unverified_claim_ratio": sum(
+            item["verdict"] == "insufficient" for item in claims
+        )
+        / max(1, len(claims)),
+        "section_success_rate": sum(item["status"] == "completed" for item in sections)
+        / max(1, len(sections)),
+        "writer_degraded": any(item["status"] == "degraded" for item in sections),
+        "total_tokens": int(metrics.get("input_tokens", 0))
+        + int(metrics.get("output_tokens", 0)),
+        "elapsed_ms": 0 if deterministic else metrics.get("elapsed_ms", 0),
+        "deterministic": deterministic,
+        "workflow_version": metrics.get("workflow_version"),
+        "profile_version": metrics.get("profile_version"),
+        "scoring_version": SCORING_VERSION,
     }
 
 
@@ -202,7 +282,9 @@ def live_case(
     claims = _request("GET", f"{base}/claims", token, timeout=30).json()["items"]
     sections = _request("GET", f"{base}/sections", token, timeout=30).json()["items"]
     artifacts = _request("GET", f"{base}/artifacts", token, timeout=30).json()["items"]
-    metrics = _request("GET", f"{base}/metrics", token, timeout=30).json()["metrics"]
+    metrics = _request(
+        "GET", f"{base}/metrics", token, params={"run_id": run_id}, timeout=30
+    ).json()["metrics"]
     markdown = next(
         (
             item
@@ -216,37 +298,20 @@ def live_case(
         if markdown
         else ""
     )
-    citations = set(re.findall(r"\[(E\d+)\]", report))
-    valid = {item["citation"] for item in evidence}
-    return {
-        "case_id": case["id"],
-        "mode": mode,
-        "completed": run["status"] == "succeeded",
-        "plan_steps": len(
+    return score_observation(
+        case,
+        mode,
+        report=report,
+        completed=run["status"] == "succeeded",
+        plan_steps=len(
             _request("GET", f"{base}/plan", token, timeout=30).json()["plan"]["steps"]
         ),
-        "plan_legal": PROFILES[mode][0] <= len(sections) <= PROFILES[mode][1],
-        "citation_coverage": 1.0 if citations else 0.0,
-        "citation_validity": len(citations & valid) / max(1, len(citations)),
-        "expected_source_hit_rate": 1.0 if evidence else 0.0,
-        "conflict_recognition": 1.0
-        if case["has_conflict"]
-        and any(item["verdict"] == "conflicting" for item in claims)
-        else None,
-        "unsupported_claim_ratio": sum(
-            item["verdict"] == "unsupported" for item in claims
-        )
-        / max(1, len(claims)),
-        "section_success_rate": sum(item["status"] == "completed" for item in sections)
-        / max(1, len(sections)),
-        "writer_degraded": any(item["status"] == "degraded" for item in sections),
-        "total_tokens": int(metrics.get("input_tokens", 0))
-        + int(metrics.get("output_tokens", 0)),
-        "elapsed_ms": metrics.get("duration_ms", 0),
-        "deterministic": False,
-        "workflow_version": "research-workflow-v1",
-        "profile_version": 4,
-    }
+        evidence=evidence,
+        claims=claims,
+        sections=sections,
+        metrics=metrics,
+        deterministic=False,
+    )
 
 
 def summarize(rows: list[dict]) -> dict:
@@ -283,7 +348,7 @@ def gate(rows: list[dict], cases: list[dict]) -> list[str]:
         case = by_id[row["case_id"]]
         if case["has_conflict"] and row["conflict_recognition"] != 1.0:
             failures.append(f"{row['case_id']} 未识别冲突")
-        if case["has_gap"] and row["unsupported_claim_ratio"] <= 0:
+        if case["has_gap"] and row["gap_recognition"] != 1.0:
             failures.append(f"{row['case_id']} 未识别证据缺口")
     return failures
 
@@ -294,6 +359,11 @@ def compare_baseline(payload: dict, baseline_path: Path) -> list[str]:
         return ["baseline 只允许比较 live 结果"]
     if baseline.get("dataset_fingerprint") != payload.get("dataset_fingerprint"):
         return ["baseline Dataset 指纹不一致"]
+    if any(
+        row.get("scoring_version") != SCORING_VERSION
+        for row in [*payload.get("results", []), *baseline.get("results", [])]
+    ):
+        return ["baseline 评分版本不一致，请使用当前评分规则重新建立基线"]
     current_rows = list(payload.get("results") or [])
     baseline_rows = list(baseline.get("results") or [])
     current_modes = {row.get("mode") for row in current_rows}

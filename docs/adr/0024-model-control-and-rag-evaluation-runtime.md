@@ -22,6 +22,7 @@ ADR-0014 已建立纯评分 Interface、Dataset fingerprint、baseline 和 GateP
 7. Evaluation Worker 与 Indexing Worker、API 由同一 launcher 监督，但拥有独立 owner identity、并发配置和 shutdown 生命周期。HTTP Interface 只负责 Dataset/Job CRUD、查询 Case 和取消，不在请求内执行模型调用。
 8. 管理 Interface 只向 `admin` 开放。模型中心支持 Model Profile CRUD 和四角色 Assignment；RAG 评估工作台支持 Dataset JSON 导入、baseline、启动前检查、Job 进度/取消、历史趋势、Gate、Case 与公开 Evidence identity。
 9. 前端 Model Store 与 Evaluation Store 是账号作用域状态的正式 Seam。它们集中处理类型化请求、公开错误、Job 恢复和活动轮询；登录主体变化或退出时必须清除目录、Job、Case 与 timer。
+10. OpenAI-compatible 模型的结构化调用统一通过 `backend.agent.models.structured_output`，显式使用 Function Calling 并保留 Pydantic 字段校验。研究、RAG、Data QA 与 Evaluator 不依赖 SDK 默认的 `json_schema` 格式；能力声明要求模型支持该调用方式，不能以普通文本调用成功代替验证。此处不探测格式、不在失败后切换模型或协议，调用仍由 ProviderExecutor 约束 deadline、取消和重试。
 
 ## 不变量
 

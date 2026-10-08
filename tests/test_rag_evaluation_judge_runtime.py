@@ -33,7 +33,7 @@ class _EvaluatorModel:
     def __init__(self):
         self.schema = None
 
-    def with_structured_output(self, schema):
+    def with_structured_output(self, schema, *, method):
         self.schema = schema
         return self
 
