@@ -69,6 +69,9 @@ class DataQaQueryV1(BaseModel):
     question: str
     status: DataQaStatus
     run_id: str | None = None
+    analysis_run_id: str | None = None
+    analysis_status: str | None = None
+    analysis_error_code: str | None = None
     error_code: str | None = None
     version: int
     created_at: str

@@ -78,8 +78,17 @@ jobs:
           DATABASE_URL: postgresql+psycopg2://zhiyuan_ci:ci-only-password@127.0.0.1:5432/zhiyuan_ci
         run: |
           uv run --no-sync alembic upgrade head
-          uv run --no-sync alembic downgrade -1
-          uv run --no-sync alembic upgrade head
+          uv run --no-sync python - <<'PY'
+          from alembic import command
+          from backend.infra.database import alembic_config, assert_schema_current
+          try:
+              command.downgrade(alembic_config(), "-1")
+          except RuntimeError as exc:
+              assert "Evaluation execution identity would be lost; downgrade refused" in str(exc)
+          else:
+              raise AssertionError("The execution manifest migration must reject downgrade")
+          assert_schema_current()
+          PY
 
       - name: Verify cross-instance refresh rotation on PostgreSQL
         env:

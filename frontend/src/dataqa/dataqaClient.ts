@@ -41,6 +41,9 @@ export interface DataQaQuery {
   question: string;
   status: DataQaStatus;
   run_id: string | null;
+  analysis_run_id?: string | null;
+  analysis_status?: string | null;
+  analysis_error_code?: string | null;
   error_code: string | null;
   version: number;
   created_at: string;

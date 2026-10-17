@@ -3,9 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 
 
-PROFILE_VERSION = 8
-WORKFLOW_VERSION = "research-workflow-v5"
-PROMPT_VERSION = "research-prompts-v5"
+PROFILE_VERSION = 9
+WORKFLOW_VERSION = "research-workflow-v6"
+PROMPT_VERSION = "research-prompts-v6"
 _PROFILES = {
     "quick": {
         "label": "快速",

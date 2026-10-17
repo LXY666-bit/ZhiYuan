@@ -32,7 +32,7 @@
           <span>深度研搜</span>
         </button>
         <button
-          v-if="authStore.isAuthenticated"
+          v-if="authStore.isAdmin"
           type="button"
           :class="['nav-btn', { active: chatStore.activeNav === 'dataqa' }]"
           aria-label="智能问数"

@@ -7,6 +7,7 @@
 - Bug fix 先增加能稳定失败的回归，再修实现；新功能覆盖成功、拒绝/失败和边界路径。
 - 测试命名描述行为和条件，不描述“调用了某私有函数”。优先通过公开 service/module seam 观察结果。
 - 单元测试默认离线、确定性、无真实 Secret、无公网、无大型模型下载。
+- 根 `conftest.py` 统一禁用 dotenv 并隔离应用环境变量；需要测试配置时在测试内部显式注入，真实协议只使用专用 integration 变量。不要加载开发者 `.env` 来让测试通过。
 - 普通模型调用使用 fake model；Provider、Redis、Milvus、PostgreSQL 的真实协议由明确 integration/smoke 负责。
 - 不通过放宽断言、增加任意 sleep、吞异常或全局 monkeypatch 让测试偶然通过。
 

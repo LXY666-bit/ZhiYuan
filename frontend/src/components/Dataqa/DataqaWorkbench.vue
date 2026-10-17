@@ -33,13 +33,13 @@
         >
           <button type="button" class="query-select" @click="store.select(query.id)">
             <strong>{{ query.question }}</strong>
-            <small>{{ query.status }} · {{ formatTime(query.created_at) }}</small>
+            <small>{{ queryStatusLabel(query) }} · {{ formatTime(query.created_at) }}</small>
           </button>
           <button
             type="button"
             class="query-delete"
-            :disabled="isQueryActive(query.status) || store.deletingId === query.id"
-            :title="isQueryActive(query.status) ? '问数完成后才能删除' : '删除此问数记录'"
+            :disabled="isQueryActive(query) || store.deletingId === query.id"
+            :title="isQueryActive(query) ? '问数与分析完成后才能删除' : '删除此问数记录'"
             @click="confirmDelete(query.id, query.question)"
           >
             {{ store.deletingId === query.id ? '删除中…' : '删除' }}
@@ -55,13 +55,18 @@
               <span class="question-dot"></span>
               <span class="question-text">{{ selected.question }}</span>
             </div>
-            <span class="status-chip" :class="selected.status">{{ statusLabel }}</span>
+            <span class="status-chip" :class="isCancelled ? 'cancelled' : selected.status">{{
+              statusLabel
+            }}</span>
           </div>
 
           <p v-if="isActive" class="running-hint">
             正在执行：取表结构 → 生成 SQL → 只读执行 → 图表推断，完成后自动展示。
           </p>
-          <p v-if="selected.status === 'failed'" class="dataqa-error" role="alert">
+          <p v-if="isCancelled" class="running-hint" role="status">
+            查询已取消，可修改问题后重新发起。
+          </p>
+          <p v-else-if="selected.status === 'failed'" class="dataqa-error" role="alert">
             查询失败：{{ selected.error_code || '未知错误' }}
           </p>
 
@@ -289,13 +294,16 @@
               <button
                 type="button"
                 class="ghost"
-                :disabled="store.analysisBusy || result.analysis !== null"
+                :disabled="store.analysisRunning || result.analysis !== null"
                 @click="store.generateAnalysis()"
               >
-                {{ store.analysisBusy ? '生成中…' : '生成数据分析' }}
+                {{ store.analysisRunning ? '生成中…' : '生成数据分析' }}
               </button>
             </div>
             <div v-if="result.analysis" class="analysis-text" v-html="analysisHtml"></div>
+            <p v-else-if="selected?.analysis_error_code" class="analysis-hint">
+              分析未完成（{{ selected.analysis_error_code }}），可重新生成。
+            </p>
             <p v-else class="analysis-hint">
               已先返回数据库查询结果。如需趋势、异常和建议，可点击右侧按钮生成分析。
             </p>
@@ -309,8 +317,8 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useDataQaStore } from '@/stores/dataqa';
-import type { DataQaChartType } from '@/dataqa/dataqaClient';
+import { isDataQaQueryActive as isQueryActive, useDataQaStore } from '@/stores/dataqa';
+import type { DataQaChartType, DataQaQuery } from '@/dataqa/dataqaClient';
 import { parseMarkdown } from '@/utils/markdown';
 import { chartFields, chartData, formatCell, toFiniteNumber } from '@/dataqa/charts';
 
@@ -335,15 +343,20 @@ const highlightedSql = computed(() => {
 });
 const analysisHtml = computed(() => parseMarkdown(result.value?.analysis ?? ''));
 const isActive = computed(() => ['pending', 'running'].includes(selected.value?.status ?? ''));
-const statusLabel = computed(() => {
+const isCancelled = computed(
+  () => selected.value?.status === 'failed' && selected.value.error_code === 'RUN_CANCELLED'
+);
+function queryStatusLabel(query: DataQaQuery): string {
+  if (query.status === 'failed' && query.error_code === 'RUN_CANCELLED') return '已取消';
   const map: Record<string, string> = {
     pending: '排队中',
     running: '执行中',
     completed: '已完成',
     failed: '失败',
   };
-  return map[selected.value?.status ?? ''] ?? selected.value?.status ?? '';
-});
+  return map[query.status] ?? query.status;
+}
+const statusLabel = computed(() => (selected.value ? queryStatusLabel(selected.value) : ''));
 
 const fields = computed(() => chartFields(result.value?.columns ?? [], result.value?.rows ?? []));
 const labelField = computed(() => {
@@ -462,8 +475,6 @@ const pieArcs = computed(() => {
 
 const formatChartValue = (value: number) =>
   new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value);
-
-const isQueryActive = (status: string) => ['pending', 'running'].includes(status);
 
 const formatTime = (value: string) => {
   if (!value) return '';

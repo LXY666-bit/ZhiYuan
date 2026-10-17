@@ -1001,6 +1001,15 @@ def _create_single_result(
                 max(snippet_bytes - excess, 0),
             )
             continue
+        # Keep source identity/version clues before spending the budget on body text.
+        content_bytes = len(candidate_content.encode("utf-8"))
+        minimum_content_bytes = len(candidate_content[0].encode("utf-8"))
+        if content_bytes > minimum_content_bytes:
+            candidate_content = _truncate_utf8(
+                candidate_content,
+                max(content_bytes - excess, minimum_content_bytes),
+            )
+            continue
         title_bytes = len(candidate_title.encode("utf-8"))
         if title_bytes:
             candidate_title = _truncate_utf8(

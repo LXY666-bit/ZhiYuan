@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   approveResearchProject,
   createPlanJob,
+  createResearchProject,
   getResearchPlan,
   getResearchProject,
   getResearchMetrics,
@@ -64,6 +65,25 @@ function deferred<T>() {
 }
 
 describe('research store account scope and polling lifecycle', () => {
+  it('ignores a late creation response after reset without selecting the old account project', async () => {
+    setActivePinia(createPinia());
+    const pending = deferred<ReturnType<typeof project>>();
+    vi.mocked(createResearchProject).mockReturnValue(pending.promise);
+    const store = useResearchStore();
+    const work = store.create({
+      title: '研究',
+      objective: '研究知渊',
+      mode: 'quick',
+      sources: [],
+      output_formats: ['markdown'],
+    });
+    store.reset();
+    pending.resolve(project());
+    await work;
+    expect(store.projects).toEqual([]);
+    expect(store.selectedId).toBe('');
+    expect(getResearchProject).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();

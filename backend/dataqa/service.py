@@ -28,6 +28,12 @@ class DataQaService:
         )
         return self.repository.create_query(model_snapshot=snapshot, **kwargs)
 
+    def create_analysis(self, **kwargs: Any) -> QueryCreateRecord:
+        snapshot = self.model_control.runtime_snapshot(
+            required_roles=frozenset({ModelRole.ANSWER})
+        )
+        return self.repository.create_analysis(model_snapshot=snapshot, **kwargs)
+
     def __getattr__(self, name: str) -> Any:
         return getattr(self.repository, name)
 

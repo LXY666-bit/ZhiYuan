@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from datetime import timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -15,13 +16,15 @@ from backend.dataqa.contracts import DataQaGroundedSqlDecision
 from backend.dataqa.repository import DataQaRepository
 from backend.dataqa.semantic_schema import build_semantic_schema
 from backend.dataqa.workflow import DataQaWorkflowRunner, build_content, infer_chart
-from backend.db.models import Base, DataQaQuery, Message, Run, Thread, User
+from backend.db.models import Base, DataQaQuery, Message, Run, Thread, User, utcnow
 from backend.model_control import (
     ModelRole,
     ModelRuntimeSpec,
     build_model_catalog_snapshot,
 )
 from backend.runs.state import RunStatus
+from backend.runs.repository import RunRepository
+from backend.runs.service import RunService
 from backend.sql_assistant.postgres import SqlAssistantError, SqlAssistantErrorCode
 
 SessionFactory = Any
@@ -38,7 +41,7 @@ def session_factory():
     Base.metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory.begin() as db:
-        db.add(User(username="alice", password_hash="unused", role="user"))
+        db.add(User(username="alice", password_hash="unused", role="admin"))
         db.add(User(username="bob", password_hash="unused", role="admin"))
     return factory
 
@@ -192,6 +195,7 @@ def _run_once(
     *,
     model: _FakeModel | None = None,
     runtime: Any = None,
+    finalize: bool = True,
 ) -> Any:
     runner = DataQaWorkflowRunner(
         store=repository,
@@ -200,13 +204,34 @@ def _run_once(
         runtime_provider=lambda: runtime,
         semantic_schema=_SemanticSchema(),  # type: ignore[arg-type]
     )
-    return asyncio.run(
-        runner.run(
-            snapshot=_execution_snapshot(session_factory, record.run_id),
-            token=SimpleNamespace(cancelled=False),
-            worker_id="test-worker",
+    service = RunService(RunRepository(session_factory))
+    with session_factory() as db:
+        pending = db.get(Run, record.run_id).status == "pending"
+    if pending:
+        service.claim_run(run_id=record.run_id, worker_id="test-worker")
+    snapshot = _execution_snapshot(session_factory, record.run_id)
+    try:
+        content = asyncio.run(
+            runner.run(
+                snapshot=snapshot,
+                token=SimpleNamespace(cancelled=False),
+                worker_id="test-worker",
+            )
         )
-    )
+    except AppError as exc:
+        service.fail_run(
+            run_id=record.run_id,
+            public_error=exc,
+            fencing_token=snapshot.run.fencing_token,
+        )
+        raise
+    if finalize:
+        service.complete_run(
+            run_id=record.run_id,
+            content=content,
+            fencing_token=snapshot.run.fencing_token,
+        )
+    return content
 
 
 # ----------------------------------------------------------------- 仓储层
@@ -368,7 +393,7 @@ def test_workflow_is_idempotent_on_replay(session_factory):
         model_snapshot=_snapshot(),
     )
     runtime = _FakeRuntime()
-    _run_once(repository, session_factory, record, runtime=runtime)
+    _run_once(repository, session_factory, record, runtime=runtime, finalize=False)
     # 重放：不再执行 SQL，直接从持久化结果恢复
     _run_once(repository, session_factory, record, runtime=runtime)
     assert runtime.executed == [
@@ -423,39 +448,62 @@ def test_workflow_preserves_sql_policy_error_for_the_canonical_run(session_facto
 # ----------------------------------------------------------------- 分析
 
 
-def test_attach_analysis_is_gated_and_idempotent(session_factory):
+def test_analysis_runs_are_idempotent_cancellable_and_publish_only_at_terminal(
+    session_factory,
+):
     repository = DataQaRepository(session_factory)
     record = repository.create_query(
         username="alice",
         tenant_id="default",
-        question="销量前五的商品是哪些？",
-        idempotency_key="query-v7",
+        question="销量问题",
+        idempotency_key="analysis-source",
         model_snapshot=_snapshot(),
     )
     with pytest.raises(AppError):
-        repository.attach_analysis(
+        repository.create_analysis(
             username="alice",
             tenant_id="default",
             query_id=record.query.id,
-            analysis="分析",
+            idempotency_key="analysis-v1",
+            model_snapshot=_snapshot(),
         )
     _run_once(repository, session_factory, record, runtime=_FakeRuntime())
-    updated = repository.attach_analysis(
+    analysis = repository.create_analysis(
         username="alice",
         tenant_id="default",
         query_id=record.query.id,
-        analysis="键盘销量最高。",
+        idempotency_key="analysis-v1",
+        model_snapshot=_snapshot(),
     )
-    assert updated.result is not None
-    assert updated.result.analysis == "键盘销量最高。"
-    again = repository.attach_analysis(
+    repeated = repository.create_analysis(
         username="alice",
         tenant_id="default",
         query_id=record.query.id,
-        analysis="不同的分析",
+        idempotency_key="analysis-v1",
+        model_snapshot=_snapshot(),
     )
-    assert again.result is not None
-    assert again.result.analysis == "键盘销量最高。"
+    assert analysis.run_id == repeated.run_id != record.run_id
+    assert analysis.query.analysis_status == "pending"
+    content = _run_once(
+        repository,
+        session_factory,
+        analysis,
+        model=_FakeModel(text="键盘销量最高。"),
+        finalize=False,
+    )
+    assert (
+        repository.get_query(
+            username="alice", tenant_id="default", query_id=record.query.id
+        ).result.analysis
+        is None
+    )
+    service = RunService(RunRepository(session_factory))
+    service.complete_run(run_id=analysis.run_id, content=content)
+    view = repository.get_query(
+        username="alice", tenant_id="default", query_id=record.query.id
+    )
+    assert view.result.analysis == "键盘销量最高。"
+    assert view.analysis_status == "succeeded"
 
 
 # ----------------------------------------------------------------- 确定性
@@ -561,5 +609,142 @@ def test_analysis_generation_uses_answer_model(session_factory):
             "row_count": 1,
         },
         model_snapshot=_snapshot(),
+        token=SimpleNamespace(cancelled=False),
     )
     assert analysis == "趋势向上"
+
+
+@pytest.mark.parametrize(
+    "status,worker,fence",
+    [
+        ("cancelled", "worker", 2),
+        ("cancelling", "worker", 2),
+        ("running", "other-worker", 2),
+        ("running", "worker", 3),
+    ],
+)
+def test_late_query_result_cannot_overwrite_run_or_message(
+    session_factory, status, worker, fence
+):
+    repository = DataQaRepository(session_factory)
+    record = repository.create_query(
+        username="bob",
+        tenant_id="default",
+        question="销量？",
+        idempotency_key="late-result",
+        model_snapshot=_snapshot(),
+    )
+    with session_factory.begin() as db:
+        run = db.get(Run, record.run_id)
+        run.status = status
+        run.owner_worker_id = worker
+        run.fencing_token = fence
+        run.lease_expires_at = utcnow() + timedelta(seconds=60)
+        db.get(Message, run.assistant_message_id).content = "original"
+    with pytest.raises(AppError):
+        repository.complete_query(
+            run_id=record.run_id,
+            worker_id="worker",
+            fencing_token=2,
+            result={"rows": []},
+            content="late result",
+        )
+    with session_factory() as db:
+        run = db.get(Run, record.run_id)
+        assert db.get(Message, run.assistant_message_id).content == "original"
+        assert db.get(DataQaQuery, record.query.id).result_json is None
+
+
+def test_query_creation_rejects_non_admin_and_changed_idempotent_payload(
+    session_factory,
+):
+    repository = DataQaRepository(session_factory)
+    with session_factory.begin() as db:
+        db.query(User).filter_by(username="alice").one().role = "user"
+    with pytest.raises(AppError) as denied:
+        repository.create_query(
+            username="alice",
+            tenant_id="default",
+            question="销量？",
+            idempotency_key="no-admin",
+            model_snapshot=_snapshot(),
+        )
+    assert denied.value.status_code == 403
+    repository.create_query(
+        username="bob",
+        tenant_id="default",
+        question="销量？",
+        idempotency_key="same-payload",
+        model_snapshot=_snapshot(),
+    )
+    with pytest.raises(AppError) as conflict:
+        repository.create_query(
+            username="bob",
+            tenant_id="default",
+            question="库存？",
+            idempotency_key="same-payload",
+            model_snapshot=_snapshot(),
+        )
+    assert conflict.value.code == ErrorCode.IDEMPOTENCY_CONFLICT
+
+
+def test_staged_query_result_waits_for_canonical_finalization(session_factory):
+    repository = DataQaRepository(session_factory)
+    record = repository.create_query(
+        username="bob",
+        tenant_id="default",
+        question="销量？",
+        idempotency_key="stage-result",
+        model_snapshot=_snapshot(),
+    )
+    content = _run_once(
+        repository, session_factory, record, runtime=_FakeRuntime(), finalize=False
+    )
+    with session_factory() as db:
+        run = db.get(Run, record.run_id)
+        assert run.status == "running"
+        assert db.get(DataQaQuery, record.query.id).status == "running"
+        assert db.get(Message, run.assistant_message_id).content == ""
+    RunService(RunRepository(session_factory)).complete_run(
+        run_id=record.run_id, content=content
+    )
+    assert (
+        repository.get_query(
+            username="bob", tenant_id="default", query_id=record.query.id
+        ).status
+        == "completed"
+    )
+
+
+def test_cancelled_analysis_never_publishes_late_model_output(session_factory):
+    repository = DataQaRepository(session_factory)
+    record = repository.create_query(
+        username="alice",
+        tenant_id="default",
+        question="销量问题",
+        idempotency_key="cancel-source",
+        model_snapshot=_snapshot(),
+    )
+    _run_once(repository, session_factory, record, runtime=_FakeRuntime())
+    analysis = repository.create_analysis(
+        username="alice",
+        tenant_id="default",
+        query_id=record.query.id,
+        idempotency_key="cancel-analysis",
+        model_snapshot=_snapshot(),
+    )
+    service = RunService(RunRepository(session_factory))
+    claimed = service.claim_run(run_id=analysis.run_id, worker_id="worker")
+    service.request_cancel(username="alice", run_id=analysis.run_id)
+    result = service.complete_run(
+        run_id=analysis.run_id,
+        content="late analysis",
+        fencing_token=claimed.fencing_token,
+    )
+    assert result.status == "cancelled"
+    view = repository.get_query(
+        username="alice", tenant_id="default", query_id=record.query.id
+    )
+    assert view.status == "completed"
+    assert view.analysis_status == "cancelled"
+    assert view.result.analysis is None

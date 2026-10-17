@@ -24,6 +24,7 @@ from backend.core.errors import (
 )
 from backend.core.settings import get_settings
 from backend.db.models import (
+    DataQaQuery,
     Message,
     Thread,
     Run,
@@ -1240,9 +1241,9 @@ class RunRepository:
         fencing_token: int | None = None,
         error_code: str | None = None,
         error_detail_redacted: str | None = None,
-        input_tokens: int = 0,
-        output_tokens: int = 0,
-        cost: Decimal | str | float = Decimal("0"),
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        cost: Decimal | str | float | None = None,
         rag_trace: dict | None = None,
         partial: bool = False,
         _lease_expired_before: datetime | None = None,
@@ -1306,16 +1307,52 @@ class RunRepository:
                 run.error_code = error_code
                 run.error_detail_redacted = error_detail_redacted
                 public_error = deserialize_public_error(error_detail_redacted)
-                run.input_tokens = max(0, input_tokens)
-                run.output_tokens = max(0, output_tokens)
-                run.cost = Decimal(str(cost))
+                if input_tokens is not None:
+                    run.input_tokens = max(0, input_tokens)
+                if output_tokens is not None:
+                    run.output_tokens = max(0, output_tokens)
+                if cost is not None:
+                    run.cost = Decimal(str(cost))
                 if assistant:
                     assistant.content = content
                     assistant.status = self._message_status(target, partial)
                     assistant.rag_trace = rag_trace
                     assistant.updated_at = now
+                if run.channel == "dataqa":
+                    query = (
+                        db.query(DataQaQuery)
+                        .filter(DataQaQuery.run_id == run.id)
+                        .with_for_update()
+                        .first()
+                    )
+                    if query is not None:
+                        query.status = (
+                            "completed"
+                            if target == RunStatus.SUCCEEDED.value
+                            else "failed"
+                        )
+                        query.error_code = error_code
+                        query.updated_at = now
+                    elif target == RunStatus.SUCCEEDED.value:
+                        query = (
+                            db.query(DataQaQuery)
+                            .filter(DataQaQuery.thread_ref_id == run.thread_ref_id)
+                            .with_for_update()
+                            .first()
+                        )
+                        if query is not None and query.result_json is not None:
+                            query.result_json = {
+                                **query.result_json,
+                                "analysis": content,
+                            }
+                            query.version += 1
+                            query.updated_at = now
                 thread.updated_at = now
-                if input_tokens or output_tokens or Decimal(str(cost)) != Decimal("0"):
+                if (
+                    input_tokens is not None
+                    or output_tokens is not None
+                    or cost is not None
+                ):
                     append_event_in_session(
                         db,
                         run=run,

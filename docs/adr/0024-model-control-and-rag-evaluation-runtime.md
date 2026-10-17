@@ -32,7 +32,8 @@ ADR-0014 已建立纯评分 Interface、Dataset fingerprint、baseline 和 GateP
 - Model Profile version 每次修改单调递增；Snapshot 同时保存 profile identity 与 version，不能只保存可变名称。
 - 缺失必需 Assignment、Profile 已停用、能力不满足或 API Key 未配置时，新运行 fail-closed；不得静默回退到另一环境模型。
 - RAG Evaluation Job 必须有 durable identity 和明确的 queued、running、cancelling、cancelled、succeeded 或 failed 状态；dead worker 的过期 lease 只能由 fencing-aware recovery 处理。
-- baseline 必须来自相同 Dataset fingerprint；Dataset 内容变化后不得继续比较旧 baseline。
+- baseline 必须来自相同 Dataset、Model Snapshot、检索范围和源码 fingerprint；身份不同只能作为单独实验，不能宣称回归门禁通过。
+- Evaluation Job 创建时保存检索快照和源码 fingerprint；整批 Case、HITL 与 worker 重领复用同一索引、collection filter 和 Document Version 集。worker 执行前校验源码，缺少快照的旧活动任务明确失败并要求重新创建，不补造历史身份。旧终态报告仍可读取。
 - Case 响应可以包含问题和生成答案，但 Evidence 只暴露稳定 identity；不得暴露正文、endpoint、Secret、原始异常或私有推理。
 - Assignment、Run Snapshot 与 Evaluation Job 各只有一套正式 Interface 和实际 Implementation，遵循 ADR-0023，不保留环境变量热切换或同步在线评估旁路。
 

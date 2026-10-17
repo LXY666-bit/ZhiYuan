@@ -469,6 +469,36 @@ def test_fetch_truncates_utf8_content_without_splitting_characters() -> None:
     assert evidence.content.encode("utf-8").decode("utf-8") == evidence.content
 
 
+def test_fetch_budget_preserves_page_title_and_version_clue() -> None:
+    limits = WebResearchLimits(max_content_bytes=1024, max_total_evidence_bytes=1024)
+    policy = _policy()
+    title = "PostgreSQL: Documentation: 18: B-tree"
+    client = _Fetch(
+        WebHttpFetch(
+            resolved=policy.resolve("https://news.openai.com/text"),
+            status_code=200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            body=f"<title>{title}</title><p>{'Evidence ' * 300}</p>".encode(),
+            redirects=0,
+        )
+    )
+    runtime = WebResearchRuntime(
+        url_policy=policy,
+        config=WebResearchRuntimeConfig(limits=limits),
+        http_client=client,
+        search_adapter=_Search(()),
+        clock=lambda: _NOW,
+    )
+    runtime.start()
+    try:
+        result = runtime.fetch("https://news.openai.com/text")
+        assert result.evidence[0].title == title
+        assert result.evidence[0].content
+        assert result.tool_encoded_size <= limits.max_total_evidence_bytes
+    finally:
+        runtime.close()
+
+
 def test_fetch_rejects_binary_content_even_from_an_untrusted_fake_adapter() -> None:
     policy = _policy()
     client = _Fetch(

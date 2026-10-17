@@ -100,6 +100,30 @@ def _dataset(case: RagEvalCase):
     return RagEvalDataset(name="rag_smoke_v1", cases=(case,))
 
 
+@pytest.mark.parametrize(
+    "key",
+    [
+        "model_catalog_hash",
+        "retrieval_index_ids",
+        "rag_source_fingerprint",
+        "provenance",
+    ],
+)
+def test_baseline_rejects_different_execution_identity(key):
+    dataset = _dataset(_answer_case())
+    observations = [_answer_observation()]
+    gates = RagEvalGatePolicy()
+    baseline = evaluate_rag(dataset, observations, gates, metadata={key: "identity-a"})
+    with pytest.raises(DatasetFingerprintMismatch, match=key):
+        evaluate_rag(
+            dataset,
+            observations,
+            gates,
+            baseline=baseline,
+            metadata={key: "identity-b"},
+        )
+
+
 def test_strict_schema_rejects_unknown_fields_and_duplicate_cases():
     payload = _dataset(_answer_case()).model_dump(mode="json")
     payload["cases"][0]["unknown"] = True

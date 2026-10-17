@@ -28,7 +28,11 @@ from backend.evaluation.repository import RagEvaluationRepository
 from backend.evaluation.runtime import RagEvaluationCaseExecution
 from backend.evaluation.service import RagEvaluationService
 from backend.evaluation.worker import RagEvaluationWorker
-from tests.support import TEST_MODEL_SNAPSHOT, static_model_control
+from tests.support import (
+    static_retrieval_snapshot,
+    TEST_MODEL_SNAPSHOT,
+    static_model_control,
+)
 
 
 def _dataset() -> RagEvalDataset:
@@ -78,6 +82,7 @@ def _two_case_dataset() -> RagEvalDataset:
 
 def _settings(*, max_attempts: int = 3):
     return SimpleNamespace(
+        app=SimpleNamespace(default_tenant_id="default"),
         worker=SimpleNamespace(
             evaluation_worker_id="",
             evaluation_poll_seconds=0.01,
@@ -85,7 +90,7 @@ def _settings(*, max_attempts: int = 3):
             evaluation_heartbeat_seconds=10,
             evaluation_case_timeout_seconds=30.0,
             evaluation_max_attempts=max_attempts,
-        )
+        ),
     )
 
 
@@ -103,9 +108,90 @@ def _environment():
     service = RagEvaluationService(
         repository,
         model_control=static_model_control,
+        retrieval_resolver=static_retrieval_snapshot,
         settings=_settings(),
     )
     return engine, factory, repository, service
+
+
+def test_all_cases_use_the_snapshot_frozen_at_job_creation():
+    engine, _, repository, service = _environment()
+    try:
+        dataset = service.create_dataset(username="admin", dataset=_two_case_dataset())
+        job = service.create_job(username="admin", dataset_id=dataset.id)
+        assert job.execution_manifest is not None
+        frozen = job.execution_manifest.retrieval_snapshot
+        service.retrieval_resolver = lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("must not re-resolve")
+        )
+        seen = []
+
+        class Runtime(_SuccessfulRuntime):
+            def execute_case(self, *, retrieval_snapshot, **kwargs):
+                seen.append(retrieval_snapshot)
+                return super().execute_case(**kwargs)
+
+        worker = RagEvaluationWorker(
+            repository=repository, runtime=Runtime(), settings=_settings()
+        )
+        assert worker.run_once()
+        assert service.get_job(job.id).status is RagEvaluationJobStatus.SUCCEEDED
+        assert seen == [frozen, frozen]
+    finally:
+        engine.dispose()
+
+
+def test_legacy_job_without_snapshot_fails_before_calling_provider():
+    from backend.db.models import RagEvaluationJob
+
+    engine, factory, repository, service = _environment()
+    try:
+        dataset = service.create_dataset(username="admin", dataset=_dataset())
+        job = service.create_job(username="admin", dataset_id=dataset.id)
+        with factory.begin() as db:
+            db.get(RagEvaluationJob, job.id).execution_manifest_json = None
+
+        class Runtime:
+            def execute_case(self, **kwargs):
+                raise AssertionError("legacy jobs must not call a provider")
+
+        worker = RagEvaluationWorker(
+            repository=repository, runtime=Runtime(), settings=_settings()
+        )
+        assert worker.run_once()
+        failed = service.get_job(job.id)
+        assert failed.status is RagEvaluationJobStatus.FAILED
+        assert failed.error_code == "RAG_EVALUATION_SNAPSHOT_MISSING"
+        assert failed.completed_cases == 0
+    finally:
+        engine.dispose()
+
+
+def test_job_creation_rejects_baseline_from_another_retrieval_snapshot():
+    from dataclasses import replace
+    import pytest
+    from backend.core.errors import AppError
+    from tests.support import TEST_RETRIEVAL_SNAPSHOT
+
+    engine, _, repository, service = _environment()
+    try:
+        dataset = service.create_dataset(username="admin", dataset=_dataset())
+        baseline = service.create_job(username="admin", dataset_id=dataset.id)
+        worker = RagEvaluationWorker(
+            repository=repository, runtime=_SuccessfulRuntime(), settings=_settings()
+        )
+        assert worker.run_once()
+        service.retrieval_resolver = lambda **kwargs: replace(
+            TEST_RETRIEVAL_SNAPSHOT, index_id="new-index"
+        )
+        with pytest.raises(AppError) as rejected:
+            service.create_job(
+                username="admin", dataset_id=dataset.id, baseline_job_id=baseline.id
+            )
+        assert rejected.value.status_code == 409
+        assert len(service.list_jobs()) == 1
+    finally:
+        engine.dispose()
 
 
 def test_dataset_job_case_and_report_are_persisted_behind_one_interface():
@@ -270,6 +356,7 @@ def test_orphan_retry_exhaustion_persists_partial_report():
     service = RagEvaluationService(
         repository,
         model_control=static_model_control,
+        retrieval_resolver=static_retrieval_snapshot,
         settings=_settings(max_attempts=1),
     )
     try:

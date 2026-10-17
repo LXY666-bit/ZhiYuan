@@ -338,7 +338,11 @@
               </li>
             </ol>
           </section>
-          <p v-else class="research-muted">Run 已创建，正在准备研究步骤。</p>
+          <p v-else-if="executionSteps.length" class="research-muted">
+            选择研究步骤可查看关联证据。
+          </p>
+          <p v-else-if="isRunActive" class="research-muted">Run 已创建，正在准备研究步骤。</p>
+          <p v-else class="research-muted">本次运行没有可展示的步骤记录。</p>
           <details v-if="runState.warnings.length" class="run-warnings">
             <summary>查看 {{ runState.warnings.length }} 条降级提示</summary>
             <p

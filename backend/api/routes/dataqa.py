@@ -13,10 +13,8 @@ from backend.dataqa.contracts import (
     DataQaQueryV1,
 )
 from backend.dataqa.service import dataqa_service
-from backend.dataqa.workflow import dataqa_workflow_runner
 from backend.db.models import User
-from backend.infra.auth import get_current_user
-from backend.model_control import ModelRole, model_control_service
+from backend.infra.auth import require_admin
 from backend.runs.agent_executor import run_agent_executor
 
 router = APIRouter(prefix="/v1/dataqa/queries", tags=["dataqa"])
@@ -29,7 +27,7 @@ def _tenant() -> str:
 @router.post("", response_model=DataQaQueryV1, status_code=status.HTTP_201_CREATED)
 async def create_query(
     request: DataQaQueryCreateRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
     record = await run_in_threadpool(
         dataqa_service.create_query,
@@ -46,7 +44,7 @@ async def create_query(
 
 
 @router.get("", response_model=DataQaQueryListResponse)
-async def list_queries(current_user: User = Depends(get_current_user)):
+async def list_queries(current_user: User = Depends(require_admin)):
     queries = await run_in_threadpool(
         dataqa_service.list_queries,
         username=current_user.username,
@@ -57,7 +55,7 @@ async def list_queries(current_user: User = Depends(get_current_user)):
 
 @router.delete("/{query_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_query(
-    query_id: str, current_user: User = Depends(get_current_user)
+    query_id: str, current_user: User = Depends(require_admin)
 ) -> None:
     await run_in_threadpool(
         dataqa_service.delete_query,
@@ -68,7 +66,7 @@ async def delete_query(
 
 
 @router.get("/{query_id}", response_model=DataQaQueryV1)
-async def get_query(query_id: str, current_user: User = Depends(get_current_user)):
+async def get_query(query_id: str, current_user: User = Depends(require_admin)):
     return await run_in_threadpool(
         dataqa_service.get_query,
         username=current_user.username,
@@ -81,34 +79,17 @@ async def get_query(query_id: str, current_user: User = Depends(get_current_user
 async def create_analysis(
     query_id: str,
     request: DataQaAnalysisRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin),
 ):
-    query = await run_in_threadpool(
-        dataqa_service.get_query,
+    record = await run_in_threadpool(
+        dataqa_service.create_analysis,
         username=current_user.username,
         tenant_id=_tenant(),
         query_id=query_id,
+        idempotency_key=request.idempotency_key,
     )
-    if query.result is not None and query.result.analysis is None:
-        snapshot = model_control_service.runtime_snapshot(
-            required_roles=frozenset({ModelRole.ANSWER})
+    if record.query.analysis_status == "pending":
+        await run_agent_executor.spawn_once(
+            username=current_user.username, run_id=record.run_id
         )
-        analysis = await run_in_threadpool(
-            dataqa_workflow_runner.analyze,
-            question=query.question,
-            result=query.result.model_dump(),
-            model_snapshot=snapshot,
-        )
-        return await run_in_threadpool(
-            dataqa_service.attach_analysis,
-            username=current_user.username,
-            tenant_id=_tenant(),
-            query_id=query_id,
-            analysis=analysis,
-        )
-    return await run_in_threadpool(
-        dataqa_service.get_query,
-        username=current_user.username,
-        tenant_id=_tenant(),
-        query_id=query_id,
-    )
+    return record.query

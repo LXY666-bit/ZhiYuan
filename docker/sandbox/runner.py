@@ -15,7 +15,6 @@ import json
 import math
 import os
 import re
-import resource
 import signal
 import stat
 import subprocess
@@ -215,6 +214,8 @@ def _write_source(workspace: Path, language: str, source: bytes) -> Path:
 
 
 def _resource_limits(timeout_seconds: float, max_file_bytes: int) -> None:
+    import resource
+
     cpu_seconds = max(int(math.ceil(timeout_seconds)), 1)
     resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds + 1))
     resource.setrlimit(resource.RLIMIT_FSIZE, (max_file_bytes, max_file_bytes))

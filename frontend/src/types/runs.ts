@@ -14,7 +14,7 @@ export type DurableRunStatus =
 export interface RunRecord {
   id: string;
   thread_id: string;
-  channel: 'run' | 'research';
+  channel: 'run' | 'research' | 'dataqa';
   status: DurableRunStatus | string;
   idempotency_key: string;
   user_message_id: number;

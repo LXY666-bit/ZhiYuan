@@ -696,6 +696,7 @@ class RagEvaluationJob(Base):
     gate_policy_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     model_catalog_hash: Mapped[str] = mapped_column(CHAR(64), nullable=False)
     model_snapshot_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    execution_manifest_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     owner_worker_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

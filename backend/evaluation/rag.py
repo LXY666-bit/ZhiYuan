@@ -463,13 +463,47 @@ def dataset_fingerprint(dataset: RagEvalDataset) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+COMPARABLE_SOURCE_KEYS = (
+    "provenance",
+    "corpus_id",
+    "corpus_fingerprint",
+    "profile_id",
+    "index_id",
+    "profile_fingerprint",
+    "rag_source_fingerprint",
+    "model_catalog_hash",
+    "models",
+    "retrieval_index_ids",
+    "retrieval_snapshot_fingerprint",
+    "judge_schema_version",
+)
+
+
+def require_comparable_source(metadata: dict, baseline_metadata: dict) -> None:
+    mismatches = [
+        key
+        for key in COMPARABLE_SOURCE_KEYS
+        if baseline_metadata.get(key) != metadata.get(key)
+    ]
+    if mismatches:
+        raise DatasetFingerprintMismatch(
+            "baseline source identity differs: " + ", ".join(mismatches)
+        )
+
+
 def evaluate_rag(
     dataset: RagEvalDataset,
     observations: Sequence[RagEvalObservation] | RagEvalObservationBundle,
     gates: RagEvalGatePolicy,
     baseline: RagEvalReport | None = None,
     metadata: dict[str, JsonValue] | None = None,
+    *,
+    allow_source_mismatch: bool = False,
 ) -> RagEvalReport:
+    if baseline is not None and not allow_source_mismatch:
+        require_comparable_source(metadata or {}, baseline.metadata)
+    if allow_source_mismatch:
+        metadata = {**(metadata or {}), "source_mismatch_override": True}
     return _evaluate_rag(
         dataset,
         observations,

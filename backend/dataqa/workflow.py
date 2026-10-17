@@ -155,33 +155,39 @@ class DataQaWorkflowRunner:
         self._semantic_schema = semantic_schema
 
     async def run(self, *, snapshot: Any, token: Any, worker_id: str) -> str:
-        await asyncio.to_thread(self.store.mark_running, run_id=snapshot.run.id)
+        ownership = dict(
+            run_id=snapshot.run.id,
+            worker_id=worker_id,
+            fencing_token=snapshot.run.fencing_token,
+        )
+        await asyncio.to_thread(self.store.mark_running, **ownership)
         existing = await asyncio.to_thread(self.store.load_by_run, snapshot.run.id)
-        if existing is not None and existing.status == "completed":
-            assert existing.result_json is not None
+        if existing is not None and existing.run_id != snapshot.run.id:
+            if existing.result_json is None:
+                raise DataQaWorkflowError(_ERROR_QUERY_FAILED)
+            return await asyncio.to_thread(
+                self.analyze,
+                question=existing.question,
+                result=dict(existing.result_json),
+                model_snapshot=snapshot.model_snapshot,
+                token=token,
+            )
+        if existing is not None and existing.result_json is not None:
             return build_content(existing.question, dict(existing.result_json))
-        try:
-            result = await asyncio.to_thread(
-                self._execute_pipeline, snapshot=snapshot, token=token
-            )
-            content = build_content(snapshot.user_text, result)
-            await asyncio.to_thread(
-                self.store.complete_query,
-                run_id=snapshot.run.id,
-                result=result,
-                content=content,
-            )
-            return content
-        except Exception as exc:
-            code = str(getattr(exc, "code", "") or _ERROR_QUERY_FAILED)[:64]
-            await asyncio.to_thread(
-                self.store.fail_query, run_id=snapshot.run.id, error_code=code
-            )
-            raise
+        result = await asyncio.to_thread(
+            self._execute_pipeline, snapshot=snapshot, token=token, worker_id=worker_id
+        )
+        content = build_content(snapshot.user_text, result)
+        await asyncio.to_thread(
+            self.store.complete_query, **ownership, result=result, content=content
+        )
+        return content
 
     # ------------------------------------------------------------- pipeline
 
-    def _execute_pipeline(self, *, snapshot: Any, token: Any) -> dict[str, Any]:
+    def _execute_pipeline(
+        self, *, snapshot: Any, token: Any, worker_id: str
+    ) -> dict[str, Any]:
         runtime = self._runtime_provider()
         if runtime is None:
             raise DataQaWorkflowError(_ERROR_SQL_UNAVAILABLE)
@@ -201,6 +207,8 @@ class DataQaWorkflowRunner:
                 raise DataQaWorkflowError(_ERROR_NO_SCHEMA_MATCH)
             frozen = self.store.freeze_grounding(
                 run_id=snapshot.run.id,
+                worker_id=worker_id,
+                fencing_token=snapshot.run.fencing_token,
                 semantic_schema_hash=selection.semantic_schema_hash,
                 candidate_schema=selection.snapshot(),
             )
@@ -286,6 +294,7 @@ class DataQaWorkflowRunner:
         question: str,
         result: dict[str, Any],
         model_snapshot: Any,
+        token: Any,
     ) -> str:
         model = self.models.get(ModelRole.ANSWER, snapshot=model_snapshot)
         spec = self.models.describe(ModelRole.ANSWER, snapshot=model_snapshot)
@@ -303,7 +312,7 @@ class DataQaWorkflowRunner:
                     operation=ProviderOperation.MODEL,
                     deadline=self.clock()
                     + min(spec.timeout_seconds, DATAQA_MODEL_TIMEOUT_SECONDS),
-                    cancellation=lambda: False,
+                    cancellation=lambda: token.cancelled,
                 ),
             )
         )

@@ -50,6 +50,19 @@ def objective_versions(objective: str) -> dict[str, str]:
     }
 
 
+def official_source_domains(objective: str) -> tuple[str, ...]:
+    """Only constrain known first-party identities when the task asks for them."""
+    if not re.search(r"官方|official|primary source", objective, re.I):
+        return ()
+    return tuple(
+        dict.fromkeys(
+            site.split("/", 1)[0]
+            for term, site in _OFFICIAL_DOCUMENTATION.items()
+            if term in objective_terms(objective)
+        )
+    )
+
+
 def is_decision_step(title: str) -> bool:
     # The frozen plan's title owns the step intent; the objective appears in every question.
     return bool(

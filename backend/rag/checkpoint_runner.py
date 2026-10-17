@@ -652,18 +652,20 @@ class CheckpointedRagRunner:
         context: RunRequestContext,
         worker_id: str,
         fencing_token: int,
+        original_question: str | None = None,
     ) -> RagRunOutcome:
         from backend.rag.pipeline import _initial_state, checkpointless_rag_graph
 
         with bind_rag_runtime_context(context) as runtime_context_id:
-            result = checkpointless_rag_graph.invoke(
-                _initial_state(
-                    question,
-                    tenant_id=context.require_tenant_id(),
-                    runtime_context_id=runtime_context_id,
-                    model_snapshot=context.model_catalog_snapshot(),
-                )
+            state = _initial_state(
+                question,
+                tenant_id=context.require_tenant_id(),
+                runtime_context_id=runtime_context_id,
+                model_snapshot=context.model_catalog_snapshot(),
             )
+            # The model's search keywords must not replace the user's constraints.
+            state["original_question"] = original_question or question
+            result = checkpointless_rag_graph.invoke(state)
         return self._outcome(
             result=result,
             run_id=run_id,

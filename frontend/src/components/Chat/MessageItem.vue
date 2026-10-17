@@ -15,7 +15,7 @@
           {{ skillCompactName(msg.skillName) }}
         </small>
         <small v-if="msg.ragTrace?.retrieved_chunks?.length">
-          已引用 {{ msg.ragTrace.retrieved_chunks.length }} 个来源
+          {{ referencesSummary }}
         </small>
       </div>
 
@@ -80,7 +80,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
+import { referenceSummary } from '@/utils/referenceSummary';
 import { skillCompactName } from '@/capabilities/skillPresentation';
 import MessageContent from './MessageContent.vue';
 import ThinkingTrace from './ThinkingTrace.vue';
@@ -106,6 +107,9 @@ const referencesRef = ref<InstanceType<typeof References> | null>(null);
 const inspectorLoading = ref(false);
 const inspectorError = ref('');
 const chatStore = useChatStore();
+const referencesSummary = computed(() =>
+  referenceSummary(props.msg.text, props.msg.ragTrace?.retrieved_chunks ?? [])
+);
 
 const openReferences = () => {
   referencesRef.value?.openDetails();

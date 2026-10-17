@@ -54,7 +54,7 @@ let initialJavaScriptGzip = 0;
 
 for (const path of files) {
   const content = await readFile(path);
-  const name = relative(distPath, path);
+  const name = relative(distPath, path).replaceAll('\\', '/');
   const extension = extname(path);
   const bytes = content.byteLength;
   const gzipBytes = gzipSync(content).byteLength;
@@ -66,6 +66,9 @@ for (const path of files) {
   if (extension === '.js' && initialFiles.has(name)) initialJavaScriptGzip += gzipBytes;
   measurements.push({ name, bytes, gzipBytes });
 }
+
+if (initialJavaScriptGzip === 0)
+  failures.push('No initial JavaScript was measured; check manifest paths.');
 
 if (initialJavaScriptGzip > LIMITS.initialJavaScriptGzip) {
   failures.push(

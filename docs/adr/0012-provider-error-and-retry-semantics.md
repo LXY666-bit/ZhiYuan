@@ -37,6 +37,8 @@ RAG Module 采用下列语义：
 10. `RetrievalOutcome` Module 统一持久 Run resume 与 Tool renderer 对 `NO_KNOWLEDGE` / `INSUFFICIENT_EVIDENCE` 的解释。具体 coverage metadata 只能作为 untrusted data 进入 Human/Tool message，不能提升为 SystemMessage。
 11. Milvus 与 Rerank Adapter 在返回“健康空结果”前必须验证外层、hits、entity、index 与 score 形状；malformed response 必须成为 typed Provider failure。通用参数错误不能伪装成 hybrid capability 不兼容。
 12. FAST memory model 也跨越 Provider seam；其降级只保留当前已持久化笔记，并且日志只记录稳定 code。
+13. 健康检索有相关资料但无法支持答案时，使用 `insufficient_evidence` 结束；一次重写仍不充分不自动转澄清。只有明确的缺失条件或候选歧义可进入 HITL，最多两轮补充，明确不再补充时提前结束。RAG 的原始问题从 Run 的用户 Message 显式传入，模型生成的检索关键词不能覆盖用户的澄清约束；该原始问题随 Checkpoint 保存。仍保持同一 Run/Checkpoint/assistant Message；Provider 异常不经过该结果分支。
+14. Agent 异步调用与流式调用的本地超时优先使用 `asyncio.Timeout.expired()` 判断来源，避免 Windows 时钟粒度导致已触发的总预算超时被误分为模型超时。SDK 自身抛出的 TimeoutError 仍按 Provider taxonomy 分类；不增加重试或改变 Run 终结所有权。
 
 ## 不变量
 

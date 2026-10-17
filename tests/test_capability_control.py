@@ -11,7 +11,12 @@ from sqlalchemy.pool import StaticPool
 from backend.capabilities.control_repository import CapabilityControlRepository
 from backend.capabilities.control_service import CapabilityControlService
 from backend.core.errors import AppError, ErrorCode
-from backend.core.settings import SqlAssistantSettings, StorageSettings, get_settings
+from backend.core.settings import (
+    SqlAssistantSettings,
+    StorageSettings,
+    WebResearchSettings,
+    get_settings,
+)
 from backend.db.models import Base, User
 from backend.runs.request_context import RunRequestContext
 from backend.skills import SkillAccess
@@ -41,9 +46,13 @@ def capability_control():
                 _env_file=None,
                 SQL_ASSISTANT_ENABLED=False,
             ),
+            "web_research": WebResearchSettings(
+                _env_file=None,
+                WEB_RESEARCH_ENABLED=True,
+                TAVILY_API_KEY="tavily-test-key",
+            ),
         }
     )
-    settings.web_research.tavily_api_key = SecretStr("tavily-test-key")
     service = CapabilityControlService(
         CapabilityControlRepository(factory),
         settings=settings,

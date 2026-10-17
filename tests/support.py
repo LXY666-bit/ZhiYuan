@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from backend.documents.retrieval import RetrievalSnapshot
 from backend.model_control import (
     ModelRole,
     ModelRuntimeSpec,
@@ -38,3 +39,16 @@ class StaticModelControl:
 
 
 static_model_control = StaticModelControl()
+
+
+TEST_RETRIEVAL_SNAPSHOT = RetrievalSnapshot(
+    tenant_id="default",
+    index_id="test-index",
+    targets=(),
+    current_document_count=0,
+    catalog_document_count=0,
+)
+
+
+def static_retrieval_snapshot(**kwargs):
+    return TEST_RETRIEVAL_SNAPSHOT

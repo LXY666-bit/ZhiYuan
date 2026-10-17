@@ -68,6 +68,12 @@ def _render_rag_result(
         or status == "insufficient_evidence"
         or route == "insufficient_evidence"
     ):
+        if not coverage_gap_codes:
+            return (
+                "INSUFFICIENT_EVIDENCE: Retrieval succeeded, but the available material "
+                "does not reliably support an answer. State the evidence limitation; "
+                "do not guess, repeat this query, or request another clarification."
+            )
         return (
             "INSUFFICIENT_EVIDENCE: Retrieval completed only partially because one or "
             "more provider branches failed. Do not claim the knowledge base has no answer."
@@ -120,6 +126,7 @@ def make_checkpointed_search_knowledge_base(
     worker_id: str,
     fencing_token: int,
     runner,
+    original_question: str,
 ):
     @tool("search_knowledge_base")
     def search_knowledge_base(query: str) -> str:
@@ -134,6 +141,7 @@ def make_checkpointed_search_knowledge_base(
         outcome = runner.start(
             run_id=run_id,
             question=query,
+            original_question=original_question,
             context=ctx,
             worker_id=worker_id,
             fencing_token=fencing_token,

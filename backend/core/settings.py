@@ -9,12 +9,13 @@ from urllib.parse import unquote, urlsplit
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from backend.env import environment_file
 from backend.sandbox.contracts import validate_image_digest
 from backend.security.origins import canonical_http_origin
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = PROJECT_ROOT / ".env"
+ENV_FILE = environment_file()
 
 
 class _EnvSettings(BaseSettings):

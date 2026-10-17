@@ -17,7 +17,7 @@ uv sync --dev --locked
 ```bash
 uv run --no-sync ruff format --check .
 uv run --no-sync ruff check .
-uv run --no-sync mypy
+uv run --no-sync python -m mypy
 uv run --no-sync python scripts/generate_contract_types.py --check
 uv run --no-sync python scripts/generate_rag_eval_schemas.py --check
 uv run --no-sync python -m backend.tools.registry_cli validate
@@ -253,3 +253,23 @@ Redis 使用必填 `REDIS_PASSWORD` 启动 `requirepass`，应用的 `REDIS_URL`
 
 后端工作流中的 `ci-only-*` 值只属于 runner 内一次性 CI 依赖，不是部署凭据，也不得被
 生产环境复用。
+
+
+## 离线测试与平台边界
+
+`tests/conftest.py` 在收集前启用 `PYTHON_DOTENV_DISABLED=1`，清理应用设置对应的继承环境变量，
+并注入测试 JWT 与内存 SQLite。Pydantic 与 python-dotenv 共同遵守此开关；本地 `.env` 和第三方库
+的 dotenv 加载不会影响默认测试。显式集成变量（如 `AUTH_POSTGRES_TEST_URL`）保留。
+Linux container 的 namespace、rlimit、link count 测试在 Windows 上明确跳过；路径策略和宿主
+命令限制仍执行，完整 Linux 安全验证由 Linux CI 负责。
+
+Windows 前端 bundle 门禁将磁盘路径转换为 manifest 使用的 `/`，且拒绝首屏 JS 测量为零。
+浏览器工件 `frontend/output/` 不参与 ESLint；浏览器 E2E 前先显式运行 `npm run test:e2e:install`。
+
+## Evaluation Job 快照迁移
+
+部署新代码前停止旧 API/worker，在目标环境完成备份后执行 `uv run --no-sync alembic upgrade head`。
+`0024_eval_execution_manifest` 增加冻结检索/源码快照字段；旧任务保留 NULL，不臆造历史文档版本。
+恢复 worker 后，旧活动任务以 `RAG_EVALUATION_SNAPSHOT_MISSING` 失败，需要重新创建；旧终态报告
+可继续查看。源码发生变化时，已排队任务以 `RAG_EVALUATION_SOURCE_CHANGED` 拒绝执行。
+迁移禁止 downgrade 丢弃执行身份。SQLite 升级测试不能替代真实 PostgreSQL 锁和发布验证。

@@ -136,17 +136,20 @@ export const useResearchStore = defineStore('research', {
       }
     },
     async create(command: CreateResearchProject) {
+      const scope = this.scopeVersion;
       this.busy = true;
       this.error = '';
       try {
         const project = await createResearchProject(command);
+        if (scope !== this.scopeVersion) return;
         this.projects = [project, ...this.projects];
         await this.select(project.id);
       } catch (error) {
+        if (scope !== this.scopeVersion) return;
         this.error = getPublicError(error).message;
         throw error;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion) this.busy = false;
       }
     },
     async select(projectId: string) {
@@ -197,17 +200,21 @@ export const useResearchStore = defineStore('research', {
       else this.projects.splice(index, 1, project);
     },
     async generatePlan() {
+      const scope = this.scopeVersion;
       const project = this.selected;
       if (!project) return;
       this.busy = true;
       this.error = '';
       try {
-        this.planJob = await createPlanJob(project, createIdempotencyKey('run'));
+        const updated = await createPlanJob(project, createIdempotencyKey('run'));
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
+        this.planJob = updated;
         this.pollPlanJob(project.id, this.planJob.id, this.scopeVersion);
       } catch (error) {
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
         this.error = getPublicError(error).message;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion && project.id === this.selectedId) this.busy = false;
       }
     },
     pollPlanJob(projectId: string, jobId: string, scope: number) {
@@ -226,7 +233,9 @@ export const useResearchStore = defineStore('research', {
               state.controller = null;
               if (job.status === 'completed') {
                 await this.loadPlan(projectId);
+                if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
                 const project = await getResearchProject(projectId);
+                if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
                 this.replaceProject(project);
               } else if (job.error_code) {
                 this.error = `计划生成失败：${job.error_code}`;
@@ -235,22 +244,31 @@ export const useResearchStore = defineStore('research', {
             }
             schedule();
           } catch (error) {
-            if (state.controller?.signal.aborted) return;
+            if (
+              scope !== this.scopeVersion ||
+              projectId !== this.selectedId ||
+              state.controller?.signal.aborted
+            )
+              return;
             const publicError = getPublicError(error);
             this.error = publicError.message;
             if (publicError.retryable) schedule();
           } finally {
-            state.controller = null;
+            if (scope === this.scopeVersion && projectId === this.selectedId)
+              state.controller = null;
           }
         }, delayMs);
       };
       schedule(0);
     },
     async cancelPlan() {
+      const scope = this.scopeVersion;
       const project = this.selected;
       if (!project || !this.planJob) return;
       this.stopPolling();
-      this.planJob = await cancelPlanJob(project.id, this.planJob.id);
+      const updated = await cancelPlanJob(project.id, this.planJob.id);
+      if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
+      this.planJob = updated;
     },
     async loadPlan(projectId: string) {
       const scope = this.scopeVersion;
@@ -308,7 +326,11 @@ export const useResearchStore = defineStore('research', {
         void runs
           .connect(record.id)
           .then(async () => {
-            if (project.id !== this.selectedId || this.selected?.latest_run_id !== record.id)
+            if (
+              scope !== this.scopeVersion ||
+              project.id !== this.selectedId ||
+              this.selected?.latest_run_id !== record.id
+            )
               return;
             this.stopRunPolling();
             await this.refreshAfterRun(project.id);
@@ -365,24 +387,30 @@ export const useResearchStore = defineStore('research', {
       }
     },
     async cloneSelected() {
+      const scope = this.scopeVersion;
       const project = this.selected;
       if (!project) return;
       const cloned = await cloneResearchProject(project.id);
+      if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
       this.projects = [cloned, ...this.projects];
       await this.select(cloned.id);
     },
     async deleteSelected() {
+      const scope = this.scopeVersion;
       const project = this.selected;
       if (!project) return;
       await deleteResearchProject(project.id);
+      if (scope !== this.scopeVersion) return;
       this.projects = this.projects.filter((candidate) => candidate.id !== project.id);
       const next = this.projects[0];
       if (next) await this.select(next.id);
       else this.reset();
     },
     async refreshAfterRun(projectId: string) {
+      const scope = this.scopeVersion;
       if (projectId !== this.selectedId) return;
       const project = await getResearchProject(projectId);
+      if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
       this.replaceProject(project);
       await this.refreshResources(projectId);
     },
@@ -430,70 +458,109 @@ export const useResearchStore = defineStore('research', {
       this[resource] = items;
     },
     async refreshSteps() {
+      const scope = this.scopeVersion;
       const project = this.selected;
       if (!project?.latest_run_id) return;
       const items = await listResearchSteps(project.id, project.latest_run_id);
-      if (project.id !== this.selectedId || project.latest_run_id !== this.selected?.latest_run_id)
+      if (
+        scope !== this.scopeVersion ||
+        project.id !== this.selectedId ||
+        project.latest_run_id !== this.selected?.latest_run_id
+      )
         return;
       this.steps = items;
     },
     async refreshMetrics() {
+      const scope = this.scopeVersion;
       const project = this.selected;
       if (!project?.latest_run_id) return;
       const metrics = await getResearchMetrics(project.id, project.latest_run_id);
-      if (project.id !== this.selectedId || project.latest_run_id !== this.selected?.latest_run_id)
+      if (
+        scope !== this.scopeVersion ||
+        project.id !== this.selectedId ||
+        project.latest_run_id !== this.selected?.latest_run_id
+      )
         return;
       this.metrics = metrics;
     },
     async uploadAttachment(file: File) {
+      const scope = this.scopeVersion;
       const project = this.selected;
       if (!project) return;
       this.busy = true;
       try {
         await uploadResearchAttachment(project.id, file);
-        this.replaceProject(await getResearchProject(project.id));
-        this.attachments = await listResearchAttachments(project.id);
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
+        const updated = await getResearchProject(project.id);
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
+        this.replaceProject(updated);
+        const attachments = await listResearchAttachments(project.id);
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
+        this.attachments = attachments;
       } catch (error) {
+        if (scope !== this.scopeVersion || project.id !== this.selectedId) return;
         this.error = getPublicError(error).message;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion && project.id === this.selectedId) this.busy = false;
       }
     },
     async retryAttachment(attachmentId: string) {
+      const scope = this.scopeVersion;
+      const projectId = this.selectedId;
       if (!this.selectedId) return;
-      await retryResearchAttachment(this.selectedId, attachmentId);
-      this.attachments = await listResearchAttachments(this.selectedId);
+      await retryResearchAttachment(projectId, attachmentId);
+      if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
+      const updated = await listResearchAttachments(projectId);
+      if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
+      this.attachments = updated;
     },
     async deleteAttachment(attachmentId: string) {
+      const scope = this.scopeVersion;
+      const projectId = this.selectedId;
       if (!this.selectedId) return;
-      await deleteResearchAttachment(this.selectedId, attachmentId);
-      this.attachments = await listResearchAttachments(this.selectedId);
+      await deleteResearchAttachment(projectId, attachmentId);
+      if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
+      const updated = await listResearchAttachments(projectId);
+      if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
+      this.attachments = updated;
     },
     async deleteArtifact(artifactId: string) {
+      const scope = this.scopeVersion;
+      const projectId = this.selectedId;
       if (!this.selectedId) return;
       this.busy = true;
       try {
-        await deleteResearchArtifact(this.selectedId, artifactId);
-        this.artifacts = await listResearchResources(this.selectedId, 'artifacts');
+        await deleteResearchArtifact(projectId, artifactId);
+        if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
+        const updated = await listResearchResources(projectId, 'artifacts');
+        if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
+        this.artifacts = updated;
       } catch (error) {
+        if (scope !== this.scopeVersion || projectId !== this.selectedId) return;
         this.error = getPublicError(error).message;
         throw error;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion && projectId === this.selectedId) this.busy = false;
       }
     },
     async reviseMarkdown(markdown: string): Promise<ResearchResource[]> {
+      const scope = this.scopeVersion;
+      const projectId = this.selectedId;
       if (!this.selectedId) return [];
       this.busy = true;
       try {
-        const created = await reviseResearchMarkdown(this.selectedId, markdown, true);
-        this.artifacts = await listResearchResources(this.selectedId, 'artifacts');
+        const created = await reviseResearchMarkdown(projectId, markdown, true);
+        if (scope !== this.scopeVersion || projectId !== this.selectedId) return [];
+        const updated = await listResearchResources(projectId, 'artifacts');
+        if (scope !== this.scopeVersion || projectId !== this.selectedId) return [];
+        this.artifacts = updated;
         return created;
       } catch (error) {
+        if (scope !== this.scopeVersion || projectId !== this.selectedId) return [];
         this.error = getPublicError(error).message;
         throw error;
       } finally {
-        this.busy = false;
+        if (scope === this.scopeVersion && projectId === this.selectedId) this.busy = false;
       }
     },
   },

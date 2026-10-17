@@ -5,7 +5,7 @@ from __future__ import annotations
 from contextlib import closing
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, timedelta
 from decimal import Decimal
 from typing import Any, Callable
 from uuid import uuid4
@@ -19,7 +19,7 @@ from backend.events.generated.run_event_v1 import RunEventType
 from backend.events.journal import append_event_in_session
 from backend.infra.database import SessionLocal
 from backend.model_control import ModelCatalogSnapshot
-from backend.runs.repository import hash_run_request
+from backend.runs.repository import RunRepository, hash_run_request
 from backend.runs.state import RunStatus, TERMINAL_RUN_STATUSES
 
 SessionFactory = Callable[[], Session]
@@ -46,11 +46,16 @@ class DataQaRepository:
             raise AppError(
                 ErrorCode.AUTHENTICATION_REQUIRED, "用户不存在", status_code=401
             )
+        if user.role != "admin":
+            raise AppError(
+                ErrorCode.PERMISSION_DENIED, "管理员权限不足", status_code=403
+            )
         return user
 
     def _owned_query(
         self, db: Session, *, username: str, tenant_id: str, query_id: str
     ) -> DataQaQuery:
+        self._user(db, username)
         row = (
             db.query(DataQaQuery)
             .join(User, User.id == DataQaQuery.user_id)
@@ -66,17 +71,42 @@ class DataQaRepository:
         return row
 
     @classmethod
-    def _view(cls, row: DataQaQuery) -> DataQaQueryV1:
+    def _view(cls, db: Session, row: DataQaQuery) -> DataQaQueryV1:
+        run = db.get(Run, row.run_id) if row.run_id else None
+        analysis = (
+            db.query(Run)
+            .filter(
+                Run.thread_ref_id == row.thread_ref_id,
+                Run.channel == "dataqa",
+                Run.id != row.run_id,
+            )
+            .order_by(Run.created_at.desc(), Run.id.desc())
+            .first()
+        )
+        status = (
+            "failed"
+            if run is None
+            else {
+                "succeeded": "completed",
+                "failed": "failed",
+                "cancelled": "failed",
+                "pending": "pending",
+                "queued": "pending",
+            }.get(run.status, "running")
+        )
         return DataQaQueryV1(
             id=row.id,
             question=row.question,
-            status=row.status,  # type: ignore[arg-type]
+            status=status,  # type: ignore[arg-type]
             run_id=row.run_id,
-            error_code=row.error_code,
+            error_code=run.error_code if run else row.error_code,
+            analysis_run_id=analysis.id if analysis else None,
+            analysis_status=analysis.status if analysis else None,
+            analysis_error_code=analysis.error_code if analysis else None,
             version=row.version,
             created_at=row.created_at.isoformat() if row.created_at else "",
             updated_at=row.updated_at.isoformat() if row.updated_at else "",
-            result=row.result_json,  # type: ignore[arg-type]
+            result=row.result_json if status == "completed" else None,  # type: ignore[arg-type]
         )
 
     def get_query(
@@ -86,7 +116,7 @@ class DataQaRepository:
             row = self._owned_query(
                 db, username=username, tenant_id=tenant_id, query_id=query_id
             )
-            return self._view(row)
+            return self._view(db, row)
 
     def list_queries(
         self, *, username: str, tenant_id: str, limit: int = 50
@@ -103,11 +133,16 @@ class DataQaRepository:
                 .limit(limit)
                 .all()
             )
-            return [self._view(row) for row in rows]
+            return [self._view(db, row) for row in rows]
 
     def load_by_run(self, run_id: str) -> DataQaQuery | None:
         with closing(self._session_factory()) as db:
-            return db.query(DataQaQuery).filter(DataQaQuery.run_id == run_id).first()
+            return (
+                db.query(DataQaQuery)
+                .join(Run, Run.thread_ref_id == DataQaQuery.thread_ref_id)
+                .filter(Run.id == run_id, Run.channel == "dataqa")
+                .first()
+            )
 
     # ------------------------------------------------------------------ 写
 
@@ -115,20 +150,15 @@ class DataQaRepository:
         self,
         *,
         run_id: str,
+        worker_id: str,
+        fencing_token: int,
         semantic_schema_hash: str,
         candidate_schema: dict[str, Any],
     ) -> dict[str, Any]:
         """Persist the exact compact schema once so retries keep their scope."""
         with closing(self._session_factory()) as db:
             with db.begin():
-                row = (
-                    db.query(DataQaQuery)
-                    .filter(DataQaQuery.run_id == run_id)
-                    .with_for_update()
-                    .first()
-                )
-                if row is None:
-                    raise RuntimeError("dataqa query missing for run")
+                row = self._owned_execution(db, run_id, worker_id, fencing_token)
                 if row.candidate_schema_json is not None:
                     return dict(row.candidate_schema_json)
                 row.semantic_schema_hash = semantic_schema_hash
@@ -158,7 +188,15 @@ class DataQaRepository:
                     .first()
                 )
                 if existing is not None:
-                    return QueryCreateRecord(self._view(existing), str(existing.run_id))
+                    if existing.question != question or existing.tenant_id != tenant_id:
+                        raise AppError(
+                            ErrorCode.IDEMPOTENCY_CONFLICT,
+                            "幂等键对应不同请求",
+                            status_code=409,
+                        )
+                    return QueryCreateRecord(
+                        self._view(db, existing), str(existing.run_id)
+                    )
                 now = utcnow()
                 query_id = f"qa_{uuid4().hex}"
                 thread_id = f"thread_dataqa_{uuid4().hex}"
@@ -275,94 +313,123 @@ class DataQaRepository:
                 )
                 return QueryCreateRecord(view, run.id)
 
-    def mark_running(self, *, run_id: str) -> None:
+    @staticmethod
+    def _owned_execution(
+        db: Session, run_id: str, worker_id: str, fencing_token: int
+    ) -> DataQaQuery:
+        # Match the canonical finalizer's Run-first lock order.
+        run = db.query(Run).filter(Run.id == run_id).with_for_update().first()
+        if run is None:
+            raise AppError(ErrorCode.RUN_NOT_FOUND, "Run 不存在", status_code=404)
+        lease = run.lease_expires_at
+        if lease is not None and lease.tzinfo is None:
+            lease = lease.replace(tzinfo=UTC)
+        if (
+            run.channel != "dataqa"
+            or run.status != RunStatus.RUNNING.value
+            or run.owner_worker_id != worker_id
+            or run.fencing_token != fencing_token
+            or lease is None
+            or lease <= utcnow().replace(tzinfo=UTC)
+        ):
+            raise AppError(
+                ErrorCode.RUN_STATE_CONFLICT, "问数执行权已失效", status_code=409
+            )
+        user = db.get(User, run.user_id)
+        if user is None or user.role != "admin":
+            raise AppError(
+                ErrorCode.PERMISSION_DENIED, "管理员权限不足", status_code=403
+            )
+        row = (
+            db.query(DataQaQuery)
+            .filter(DataQaQuery.thread_ref_id == run.thread_ref_id)
+            .with_for_update()
+            .first()
+        )
+        if row is None:
+            raise AppError(ErrorCode.NOT_FOUND, "问数查询不存在", status_code=404)
+        return row
+
+    def mark_running(self, *, run_id: str, worker_id: str, fencing_token: int) -> None:
         with closing(self._session_factory()) as db:
             with db.begin():
-                row = (
-                    db.query(DataQaQuery)
-                    .filter(DataQaQuery.run_id == run_id)
-                    .with_for_update()
-                    .first()
-                )
-                if row is None or row.status != "pending":
-                    return
-                row.status = "running"
-                row.updated_at = utcnow()
+                row = self._owned_execution(db, run_id, worker_id, fencing_token)
+                if row.run_id == run_id:
+                    row.status = "running"
+                    row.updated_at = utcnow()
 
     def complete_query(
-        self, *, run_id: str, result: dict[str, Any], content: str
+        self,
+        *,
+        run_id: str,
+        worker_id: str,
+        fencing_token: int,
+        result: dict[str, Any],
+        content: str,
     ) -> None:
-        """持久化六区块结果；assistant 消息内容也在此事务内落盘。"""
+        """Stage the result; only the canonical finalizer publishes terminal state/message."""
         with closing(self._session_factory()) as db:
             with db.begin():
-                row = (
-                    db.query(DataQaQuery)
-                    .filter(DataQaQuery.run_id == run_id)
-                    .with_for_update()
-                    .first()
-                )
-                if row is None:
+                row = self._owned_execution(db, run_id, worker_id, fencing_token)
+                if row.result_json is not None:
                     return
-                run = db.query(Run).filter(Run.id == run_id).first()
-                if run is not None and run.assistant_message_id is not None:
-                    message = (
-                        db.query(Message)
-                        .filter(Message.id == run.assistant_message_id)
-                        .first()
-                    )
-                    if message is not None:
-                        message.content = content
-                        message.updated_at = utcnow()
-                row.status = "completed"
-                row.result_json = result
-                row.error_code = None
-                row.version += 1
-                row.updated_at = utcnow()
-
-    def fail_query(self, *, run_id: str, error_code: str) -> None:
-        with closing(self._session_factory()) as db:
-            with db.begin():
-                row = (
-                    db.query(DataQaQuery)
-                    .filter(DataQaQuery.run_id == run_id)
-                    .with_for_update()
-                    .first()
-                )
-                if row is None or row.status == "completed":
-                    return
-                row.status = "failed"
-                row.error_code = error_code[:64]
-                row.updated_at = utcnow()
-
-    def attach_analysis(
-        self, *, username: str, tenant_id: str, query_id: str, analysis: str
-    ) -> DataQaQueryV1:
-        with closing(self._session_factory()) as db:
-            with db.begin():
-                row = self._lock_owned_query(
-                    db, username=username, tenant_id=tenant_id, query_id=query_id
-                )
-                if row.status != "completed" or not row.result_json:
-                    raise AppError(
-                        ErrorCode.RUN_STATE_CONFLICT,
-                        "查询尚未完成，无法生成分析",
-                        status_code=409,
-                    )
-                if row.result_json.get("analysis"):
-                    return self._view(row)
-                result = dict(row.result_json)
-                result["analysis"] = analysis
                 row.result_json = result
                 row.version += 1
                 row.updated_at = utcnow()
-                db.flush()
-                return self._view(row)
+
+    def create_analysis(
+        self,
+        *,
+        username: str,
+        tenant_id: str,
+        query_id: str,
+        idempotency_key: str,
+        model_snapshot: ModelCatalogSnapshot,
+    ) -> QueryCreateRecord:
+        with closing(self._session_factory()) as db:
+            row = self._owned_query(
+                db, username=username, tenant_id=tenant_id, query_id=query_id
+            )
+            view = self._view(db, row)
+            if view.status != "completed" or view.result is None:
+                raise AppError(
+                    ErrorCode.RUN_STATE_CONFLICT,
+                    "查询尚未完成，无法生成分析",
+                    status_code=409,
+                )
+            if view.result.analysis is not None:
+                return QueryCreateRecord(view, view.analysis_run_id or str(row.run_id))
+            thread = db.get(Thread, row.thread_ref_id)
+            if thread is None:
+                raise AppError(
+                    ErrorCode.NOT_FOUND, "问数 Thread 不存在", status_code=404
+                )
+            thread_id = thread.thread_id
+        reservation = RunRepository(self._session_factory).reserve(
+            username=username,
+            thread_id=thread_id,
+            message="生成数据分析",
+            idempotency_key=idempotency_key,
+            tenant_id=tenant_id,
+            channel="dataqa",
+            request_hash=hash_run_request(
+                f"dataqa-analysis:{query_id}", tenant_id=tenant_id, channel="dataqa"
+            ),
+            model_snapshot=model_snapshot,
+            model_name=model_snapshot.require("answer").model_name,
+            multitask_strategy="reject",
+            on_disconnect="continue",
+        )
+        return QueryCreateRecord(
+            self.get_query(username=username, tenant_id=tenant_id, query_id=query_id),
+            reservation.run.id,
+        )
 
     def delete_query(self, *, username: str, tenant_id: str, query_id: str) -> bool:
-        """删除已结束问数及其独占 Thread、Run、消息和事件。"""
+        """Serialize deletion with new Run reservations without inverting Run locks."""
         with closing(self._session_factory()) as db:
             with db.begin():
-                row = self._lock_owned_query(
+                row = self._owned_query(
                     db, username=username, tenant_id=tenant_id, query_id=query_id
                 )
                 thread = (
@@ -371,46 +438,30 @@ class DataQaRepository:
                     .with_for_update()
                     .first()
                 )
-                run = None
-                if row.run_id:
-                    run = (
-                        db.query(Run)
-                        .filter(Run.id == row.run_id)
-                        .with_for_update()
-                        .first()
+                # Do not wait on an active Run's lock while holding its Thread lock:
+                # the canonical finalizer acquires Run before Thread.
+                active = (
+                    db.query(Run)
+                    .filter(
+                        Run.thread_ref_id == row.thread_ref_id,
+                        Run.status.not_in(TERMINAL_RUN_STATUSES),
                     )
-                if run is not None and run.status not in TERMINAL_RUN_STATUSES:
+                    .first()
+                )
+                if active is not None:
                     raise AppError(
                         ErrorCode.RUN_ACTIVE,
                         "问数仍在执行，请等待完成后再删除",
                         status_code=409,
                         safe_details={
-                            "active_run_id": run.id,
-                            "active_run_status": run.status,
+                            "active_run_id": active.id,
+                            "active_run_status": active.status,
                         },
                     )
                 db.delete(row)
                 if thread is not None:
                     db.delete(thread)
                 return True
-
-    def _lock_owned_query(
-        self, db: Session, *, username: str, tenant_id: str, query_id: str
-    ) -> DataQaQuery:
-        query = (
-            db.query(DataQaQuery)
-            .join(User, User.id == DataQaQuery.user_id)
-            .filter(
-                DataQaQuery.id == query_id,
-                DataQaQuery.tenant_id == tenant_id,
-                User.username == username,
-            )
-            .with_for_update()
-            .first()
-        )
-        if query is None:
-            raise AppError(ErrorCode.NOT_FOUND, "问数查询不存在", status_code=404)
-        return query
 
 
 dataqa_repository = DataQaRepository()

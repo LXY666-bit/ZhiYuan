@@ -33,6 +33,9 @@ SSRF 防护与秘密隔离。
 16. Profile v8 保持 v7 时间与输出上限，冻结决策章节复用与综合核验开关。事实章节有界并行；明确的比较/选型标题消费持久事实章节及前序决策的 Evidence/Claim，不占并发槽等待。复用 identity 在持久事务内校验同一 Run，恢复与跨 Run 隔离不变；不新增 Plan wire 字段或第二套事实来源。版本/产品不匹配只作为差异材料，重要新特性保留版本线索；核心 Claim 正确不豁免旁支事实审阅。
 17. 综合编辑与发布前核验共享原综合阶段 deadline。核验不通过或不可用时显式 `RESEARCH_SYNTHESIS_UNVERIFIED` 并撤掉该整体推荐，交付已保存的核验结果与章节；不循环重写。保留证据缺口及条件式建议，不以引用数量或 terminal success 承诺准确。
 
+18. Profile v9 保持时间预算，官方来源要求对已审核产品执行搜索域名约束和 Evidence 筛选。补全仅消费当前搜证调用已验证的搜索 Evidence URL，每轮最多两条、单条最多 5 秒，继承来源绝对 deadline、取消和 URL 安全策略；失败保留摘要并公开 `fetch_error_code`。网页结果总字节预算优先裁剪正文，保留可容纳的来源标题及版本线索；版本标题与路径仅保存为线索，不将 `current` 推定为某个固定版本。
+19. 研究目标中的数字字数上限约束正文（标题与来源附录另计），章节写作与综合编辑按其分配预算。最终合并只按完整段落/代码块节选，超限明确提示完整章节及核验仍在工作台；不删除持久 Section/Claim 或将未核验内容改为 supported。综合核验失败的重复核心结论去重，保留未解决结论。
+
 ## Consequences
 
 - 研究产品拥有独立 API 和页面，但没有第二套执行或事件通道。
@@ -40,7 +43,7 @@ SSRF 防护与秘密隔离。
 - 审批需要 RunRepository 提供 session-aware 原子预留 seam。
 - Event payload 必须保持索引式、无敏感正文；UI 收到事件后局部拉取资源。
 - 单机受控停机可释放带 Checkpoint 的 research Run 并恢复同一身份；多实例队列仍不在本 ADR 范围。
-- 新审批冻结 `research-prompts-v5` / `research-workflow-v5` / Profile v8；既有 Manifest 不被改写，旧冻结任务保留旧预算。Run 指标返回冻结的 Workflow/Profile 版本与时间预算，离线评测指纹同时覆盖 Dataset 与资料内容，评分 v2 拒绝直接比较旧评分基线。
+- 新审批冻结 `research-prompts-v6` / `research-workflow-v6` / Profile v9；既有 Manifest 不被改写，旧冻结任务保留旧预算。Run 指标返回冻结的 Workflow/Profile 版本与时间预算，离线评测指纹同时覆盖 Dataset 与资料内容，评分 v2 拒绝直接比较旧评分基线。
 
 ## Rejected alternatives
 

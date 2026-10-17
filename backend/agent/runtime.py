@@ -185,7 +185,9 @@ class AgentRuntime:
             ) from exc
         return AgentRuntimeInput(history=request.history, user_text=user_text)
 
-    def _timeout_error(self, exc: TimeoutError) -> ProviderError:
+    def _timeout_error(
+        self, exc: TimeoutError, *, scope_expired: bool = False
+    ) -> ProviderError:
         request_deadline, cancellation = self.context.request_context.provider_runtime()
         deadlines = [
             value
@@ -199,7 +201,7 @@ class AgentRuntime:
             deadline=deadline,
             cancellation=cancellation,
         )
-        if deadline is not None and time.monotonic() >= deadline:
+        if scope_expired or (deadline is not None and time.monotonic() >= deadline):
             return ProviderError.deadline_exceeded(provider_context)
         return classify_provider_exception(exc, context=provider_context)
 
@@ -229,17 +231,21 @@ class AgentRuntime:
         return self._finish(extract_agent_content(result))
 
     async def ainvoke(self, request: AgentRuntimeInput) -> AgentRuntimeResult:
+        timeout_scope: asyncio.Timeout | None = None
         try:
             request = await self._aprepare(request)
             self.context.check_deadline()
-            async with asyncio.timeout(self.context.remaining_seconds()):
+            timeout_scope = asyncio.timeout(self.context.remaining_seconds())
+            async with timeout_scope:
                 result = await self.agent.ainvoke(
                     {"messages": request.messages},
                     config=self._config(),
                     context=self.context,
                 )
         except TimeoutError as exc:
-            raise self._timeout_error(exc) from exc
+            raise self._timeout_error(
+                exc, scope_expired=timeout_scope is not None and timeout_scope.expired()
+            ) from exc
         return self._finish(extract_agent_content(result))
 
     async def astream(
@@ -249,11 +255,13 @@ class AgentRuntime:
         full_response = ""
         final_state: object | None = None
         terminal_buffering = False
+        timeout_scope: asyncio.Timeout | None = None
         try:
             request = await self._aprepare(request)
             terminal_buffering = self._requires_terminal_buffering()
             self.context.check_deadline()
-            async with asyncio.timeout(self.context.remaining_seconds()):
+            timeout_scope = asyncio.timeout(self.context.remaining_seconds())
+            async with timeout_scope:
                 async for item in self.agent.astream(
                     {"messages": request.messages},
                     stream_mode=["messages", "values"],
@@ -296,7 +304,9 @@ class AgentRuntime:
                     if not terminal_buffering:
                         yield AgentRuntimeEvent(type="content", content=content)
         except TimeoutError as exc:
-            raise self._timeout_error(exc) from exc
+            raise self._timeout_error(
+                exc, scope_expired=timeout_scope is not None and timeout_scope.expired()
+            ) from exc
 
         authoritative_content = (
             extract_agent_content(final_state)

@@ -1,0 +1,2 @@
+# Controlled corpus fingerprints are byte-based; preserve bytes across checkouts.
+evals/rag/corpus/*.html text eol=lf

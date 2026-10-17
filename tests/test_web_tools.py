@@ -21,6 +21,7 @@ def _settings(
     return WebResearchSettings(
         _env_file=None,
         WEB_RESEARCH_ENABLED=enabled,
+        TAVILY_API_KEY="tavily-test-key",
     )
 
 

@@ -435,6 +435,24 @@ def test_rag_source_fingerprint_is_stable_and_content_addressed():
     assert set(first) <= set("0123456789abcdef")
 
 
+def test_source_fingerprint_ignores_checkout_line_endings_but_detects_code_changes(
+    tmp_path,
+):
+    from pathlib import Path
+
+    for source in Path("backend").rglob("*.py"):
+        target = tmp_path / source
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(source.read_bytes().replace(b"\r\n", b"\n"))
+    lf = rag_source_fingerprint(tmp_path)
+    for source in (tmp_path / "backend").rglob("*.py"):
+        source.write_bytes(source.read_bytes().replace(b"\n", b"\r\n"))
+    assert rag_source_fingerprint(tmp_path) == lf
+    target = tmp_path / "backend/rag/utils.py"
+    target.write_bytes(target.read_bytes() + b"\n# changed implementation\n")
+    assert rag_source_fingerprint(tmp_path) != lf
+
+
 def test_live_profile_uses_catalog_snapshot_as_effective_index(monkeypatch):
     settings = SimpleNamespace(
         app=SimpleNamespace(default_tenant_id="tenant-a"),

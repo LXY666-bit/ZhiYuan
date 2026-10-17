@@ -54,6 +54,37 @@ function query(overrides: Partial<DataQaQuery> = {}): DataQaQuery {
 }
 
 describe('dataqa store scope and lifecycle', () => {
+  it.each(['ask', 'refreshSelected', 'generateAnalysis'] as const)(
+    'drops a late %s response after account reset',
+    async (action) => {
+      setActivePinia(createPinia());
+      let resolve!: (value: DataQaQuery) => void;
+      const pending = new Promise<DataQaQuery>((done) => {
+        resolve = done;
+      });
+      const request =
+        action === 'ask'
+          ? createDataQaQuery
+          : action === 'refreshSelected'
+            ? getDataQaQuery
+            : createDataQaAnalysis;
+      vi.mocked(request).mockReturnValue(pending);
+      const store = useDataQaStore();
+      store.queries = [query()];
+      store.selectedId = query().id;
+      const work = action === 'ask' ? store.ask('销量问题') : store[action]();
+      store.reset();
+      store.busy = true;
+      store.analysisBusy = true;
+      resolve(query());
+      await work;
+      expect(store.queries).toEqual([]);
+      expect(store.selectedId).toBe('');
+      expect(store.busy).toBe(true);
+      expect(store.analysisBusy).toBe(true);
+      store.reset();
+    }
+  );
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();

@@ -7,6 +7,7 @@ from threading import Event, Thread
 from uuid import uuid4
 
 from backend.core.errors import (
+    AppError,
     PublicError,
     public_error_from_exception,
     serialize_public_error,
@@ -20,7 +21,7 @@ from backend.evaluation.rag import (
     evaluate_rag,
     evaluate_rag_partial,
 )
-from backend.evaluation.rag_adapters import rag_source_fingerprint
+from backend.evaluation.rag_adapters import profile_fingerprint, rag_source_fingerprint
 from backend.evaluation.repository import (
     RagEvaluationRepository,
     rag_evaluation_repository,
@@ -125,6 +126,19 @@ class RagEvaluationWorker:
         claimed: ClaimedRagEvaluationJob,
         heartbeat_error: Event,
     ) -> None:
+        manifest = claimed.job.execution_manifest
+        if manifest is None:
+            raise AppError(
+                "RAG_EVALUATION_SNAPSHOT_MISSING",
+                "旧评测任务缺少检索快照，请重新创建",
+                status_code=409,
+            )
+        if manifest.rag_source_fingerprint != rag_source_fingerprint(PROJECT_ROOT):
+            raise AppError(
+                "RAG_EVALUATION_SOURCE_CHANGED",
+                "评测代码已变化，请重新创建任务",
+                status_code=409,
+            )
         case_index = {case.id: case for case in claimed.dataset.dataset.cases}
         while True:
             if heartbeat_error.is_set():
@@ -151,6 +165,7 @@ class RagEvaluationWorker:
                 job_id=claimed.job.id,
                 case=case,
                 model_snapshot=claimed.job.model_snapshot,
+                retrieval_snapshot=manifest.retrieval_snapshot,
                 timeout_seconds=self.settings.worker.evaluation_case_timeout_seconds,
                 cancellation=lambda: (
                     heartbeat_error.is_set()
@@ -235,14 +250,8 @@ class RagEvaluationWorker:
             }
             for role, spec in claimed.job.model_snapshot.assignments.items()
         }
-        retrieval_index_ids = sorted(
-            {
-                str(identity["index_version"])
-                for case in self.repository.list_cases(claimed.job.id)
-                for identity in case.retrieved_identities
-                if identity.get("index_version")
-            }
-        )
+        manifest = claimed.job.execution_manifest
+        retrieval_index_ids = [manifest.retrieval_snapshot.index_id] if manifest else []
         return {
             "adapter": "persistent_rag_evaluation_worker",
             "provenance": "live_rag",
@@ -250,7 +259,16 @@ class RagEvaluationWorker:
             "model_catalog_hash": claimed.job.model_catalog_hash,
             "models": safe_models,
             "retrieval_index_ids": retrieval_index_ids,
-            "rag_source_fingerprint": rag_source_fingerprint(PROJECT_ROOT),
+            "rag_source_fingerprint": claimed.job.execution_manifest.rag_source_fingerprint
+            if claimed.job.execution_manifest
+            else None,
+            "retrieval_snapshot_fingerprint": profile_fingerprint(
+                claimed.job.execution_manifest.model_dump(mode="json")[
+                    "retrieval_snapshot"
+                ]
+            )
+            if claimed.job.execution_manifest
+            else None,
             "judge_schema_version": 1,
         }
 

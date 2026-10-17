@@ -5,6 +5,7 @@ import logging
 import os
 import socket
 import time
+import threading
 from uuid import uuid4
 
 from backend.model_control import ModelCatalogSnapshot
@@ -55,19 +56,27 @@ class ResearchPlanJobDispatcher:
             self._task = None
 
     async def _run(self) -> None:
+        failures = 0
         while not self._stop.is_set():
-            claimed = await asyncio.to_thread(
-                self.repository.claim_plan_job,
-                worker_id=self.worker_id,
-                lease_seconds=self.lease_seconds,
-            )
-            if claimed is None:
-                try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=self.poll_seconds)
-                except TimeoutError:
-                    pass
-                continue
-            await self._execute(claimed)
+            try:
+                claimed = await asyncio.to_thread(
+                    self.repository.claim_plan_job,
+                    worker_id=self.worker_id,
+                    lease_seconds=self.lease_seconds,
+                )
+                if claimed is not None:
+                    await self._execute(claimed)
+                    failures = 0
+                    continue
+                failures = 0
+            except Exception:
+                failures += 1
+                logger.exception("Research Plan dispatcher iteration failed; retrying")
+            delay = min(30.0, self.poll_seconds * (2 ** min(failures, 6)))
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=delay)
+            except TimeoutError:
+                pass
 
     async def _execute(
         self,
@@ -76,8 +85,9 @@ class ResearchPlanJobDispatcher:
         job, title, objective, mode, sources, snapshot_json = claimed
         started = time.monotonic()
         heartbeat_stop = asyncio.Event()
+        ownership_lost = threading.Event()
         heartbeat = asyncio.create_task(
-            self._heartbeat(job.id, job.fencing_token, heartbeat_stop),
+            self._heartbeat(job.id, job.fencing_token, heartbeat_stop, ownership_lost),
             name=f"research-plan-heartbeat:{job.id}",
         )
         try:
@@ -91,9 +101,12 @@ class ResearchPlanJobDispatcher:
                 model_snapshot=snapshot,
                 cancellation=lambda: (
                     self._stop.is_set()
+                    or ownership_lost.is_set()
                     or self.repository.plan_job_cancel_requested(job.id)
                 ),
             )
+            if ownership_lost.is_set():
+                return
             await asyncio.to_thread(
                 self.repository.finish_plan_job,
                 job_id=job.id,
@@ -105,6 +118,8 @@ class ResearchPlanJobDispatcher:
                 error_code=result.error_code,
             )
         except Exception as exc:
+            if ownership_lost.is_set():
+                return
             logger.exception("Research Plan Job failed job_id=%s", job.id)
             await asyncio.to_thread(
                 self.repository.fail_plan_job,
@@ -119,7 +134,11 @@ class ResearchPlanJobDispatcher:
             await heartbeat
 
     async def _heartbeat(
-        self, job_id: str, fencing_token: int, stop: asyncio.Event
+        self,
+        job_id: str,
+        fencing_token: int,
+        stop: asyncio.Event,
+        ownership_lost: threading.Event,
     ) -> None:
         while not stop.is_set():
             try:
@@ -135,6 +154,7 @@ class ResearchPlanJobDispatcher:
                         lease_seconds=self.lease_seconds,
                     )
                 except Exception:
+                    ownership_lost.set()
                     logger.exception(
                         "Research Plan Job heartbeat failed job_id=%s", job_id
                     )

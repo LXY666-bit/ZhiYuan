@@ -26,7 +26,7 @@ from backend.evaluation.rag import (
 )
 
 
-RAG_SOURCE_FINGERPRINT_VERSION = "1"
+RAG_SOURCE_FINGERPRINT_VERSION = "2"
 
 
 class RagEvalExecutionError(RuntimeError):
@@ -315,7 +315,7 @@ def rag_source_fingerprint(root: str | Path) -> str:
         path = root_path / relative
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
         digest.update(b"\0")
     return digest.hexdigest()
 

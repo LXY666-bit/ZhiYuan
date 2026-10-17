@@ -16,6 +16,7 @@ def _run_record(
     *,
     run_id: str = "run_123",
     thread_id: str = "thread-1",
+    channel: str = "run",
 ) -> RunRecord:
     return RunRecord(
         id=run_id,
@@ -46,6 +47,7 @@ def _run_record(
         cost="0",
         created_at="2026-07-16T00:00:00+00:00",
         updated_at="2026-07-16T00:00:00+00:00",
+        channel=channel,
     )
 
 
@@ -124,9 +126,10 @@ def test_authenticated_create_run_uses_user_identity() -> None:
     spawn_once.assert_awaited_once_with(username="alice", run_id="run_123")
 
 
-def test_get_run_passes_username_to_service() -> None:
+@pytest.mark.parametrize("channel", ["run", "research", "dataqa"])
+def test_get_run_passes_username_to_service(channel: str) -> None:
     app, _ = _app()
-    get_run = Mock(return_value=_run_record())
+    get_run = Mock(return_value=_run_record(channel=channel))
 
     with (
         patch.object(routes.service, "get_run", get_run),
@@ -136,7 +139,27 @@ def test_get_run_passes_username_to_service() -> None:
 
     assert response.status_code == 200
     assert response.json()["id"] == "run_123"
+    assert response.json()["channel"] == channel
     get_run.assert_called_once_with(username="alice", run_id="run_123")
+
+
+def test_cancel_dataqa_run_preserves_channel_in_response() -> None:
+    from dataclasses import replace
+
+    app, _ = _app()
+    run = replace(_run_record(channel="dataqa"), status="cancelling")
+    request_cancel = Mock(return_value=run)
+    with (
+        patch.object(routes.service, "request_cancel", request_cancel),
+        patch.object(routes.service, "get_run", Mock(return_value=run)),
+        patch.object(routes.cancellation_registry, "request_cancel", AsyncMock()),
+        TestClient(app) as client,
+    ):
+        response = client.post("/v1/runs/run_123/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["channel"] == "dataqa"
+    assert response.json()["status"] == "cancelling"
 
 
 def test_get_run_events_passes_username_and_returns_next_cursor() -> None:

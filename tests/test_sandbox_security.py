@@ -78,6 +78,9 @@ def _scan(workspace: Path, source: Path, **overrides) -> int:
     return runner._scan_workspace(workspace, source_path=source, **values)
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux scandir link count semantics"
+)
 def test_workspace_scan_counts_regular_files_without_returning_paths(tmp_path):
     source = tmp_path / "main.py"
     source.write_text("print('ok')", encoding="utf-8")
@@ -87,6 +90,9 @@ def test_workspace_scan_counts_regular_files_without_returning_paths(tmp_path):
     assert _scan(tmp_path, source) == 1
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux container process/filesystem semantics"
+)
 def test_workspace_scan_rejects_symlinks_hardlinks_and_special_files(tmp_path):
     source = tmp_path / "main.py"
     source.write_text("print('ok')", encoding="utf-8")
@@ -112,6 +118,9 @@ def test_workspace_scan_rejects_symlinks_hardlinks_and_special_files(tmp_path):
     assert special.value.code == "SANDBOX_UNSAFE_FILE"
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux scandir link count semantics"
+)
 def test_workspace_scan_enforces_file_count_and_byte_limits(tmp_path):
     source = tmp_path / "main.py"
     source.write_text("pass", encoding="utf-8")
@@ -131,6 +140,9 @@ def test_workspace_scan_enforces_file_count_and_byte_limits(tmp_path):
     assert total.value.code == "SANDBOX_DISK_LIMIT"
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux container process/filesystem semantics"
+)
 def test_in_container_capture_kills_output_floods_and_timeouts(tmp_path):
     with pytest.raises(runner.RunnerFailure) as output:
         runner._capture(
@@ -153,6 +165,9 @@ def test_in_container_capture_kills_output_floods_and_timeouts(tmp_path):
     assert timeout.value.code == "SANDBOX_TIMEOUT"
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux container process/filesystem semantics"
+)
 def test_namespace_cleanup_kills_every_non_runner_pid(tmp_path):
     proc_root = tmp_path / "proc"
     proc_root.mkdir()
@@ -175,6 +190,9 @@ def test_namespace_cleanup_kills_every_non_runner_pid(tmp_path):
     assert set(killed) == {(42, signal.SIGKILL), (43, signal.SIGKILL)}
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux container process/filesystem semantics"
+)
 def test_capture_cleans_a_forked_setsid_process_before_reader_join(tmp_path):
     pid_file = tmp_path / "escaped.pid"
     escaped_pid: int | None = None

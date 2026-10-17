@@ -51,7 +51,7 @@ class RunErrorResponse(RunSchema):
 class RunResponse(RunSchema):
     id: str
     thread_id: ThreadId
-    channel: Literal["run", "research"] = "run"
+    channel: Literal["run", "research", "dataqa"] = "run"
     status: str
     idempotency_key: str
     request_hash: str

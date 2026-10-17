@@ -5,7 +5,7 @@
   >
     <details ref="detailsRef" class="references-details">
       <summary class="references-title">
-        <span><i class="fa-regular fa-bookmark"></i> 引用来源</span>
+        <span><i class="fa-regular fa-bookmark"></i> 检索证据</span>
         <small>{{ msg.ragTrace.retrieved_chunks.length }} 个证据片段</small>
       </summary>
       <ul class="sources-list references-list">

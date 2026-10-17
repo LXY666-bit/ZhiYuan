@@ -98,3 +98,15 @@ denied、成本拒绝与基础设施失败使用稳定错误码，不能伪装�
 代价是当前只支持 PostgreSQL 和显式静态 allowlist；schema 变更需要同步配置并刷新 runtime。
 写操作不会复用本 Skill。未来若新增写入能力，必须建立独立 Skill、独立数据库角色、人工审批
 与更强 Sandbox，不得放宽本 ADR。
+
+
+### DataQa 工作台的执行一致性
+
+`/v1/dataqa/queries` 的所有入口要求管理员，worker 开始执行时重新检查角色。
+候选 Schema 与结构化结果写入必须持有有效 Run owner、lease 与 fencing token；
+取消中、终态及旧 owner 的写入被拒绝。查询状态从 Run 投影，结果准备完成不等于 Run 完成。
+最终 assistant Message 与 Run terminal Event 仍由 canonical 终结事务发布。
+
+按需分析在同一问数 Thread 中预留新的 `Run(channel="dataqa")`，复用 Run 幂等、模型快照、
+取消和事件日志；分析只读取已完成查询的持久结果，不重新执行 SQL。HTTP 请求不直接调用模型。
+只有分析 Run 成功终结的事务能够把分析正文附到查询结果；取消/失败不会覆盖原查询结果。

@@ -97,7 +97,7 @@ _Avoid_: 动态模型查找、环境变量快照、Secret snapshot
 _Avoid_: Prompt list、临时问题文件
 
 **RAG Evaluation Job**:
-绑定 RAG Evaluation Dataset fingerprint、GatePolicy、可选 baseline 与 Model Snapshot 的持久化自动评估工作项；独立 worker 逐 Case 执行 RAG、生成回答、结构化评分并发布 Report。
+绑定 RAG Evaluation Dataset fingerprint、GatePolicy、可选 baseline、Model Snapshot 及冻结检索范围（索引与 Document Version）的持久化自动评估工作项；独立 worker 逐 Case 执行 RAG、生成回答、结构化评分并发布 Report。
 _Avoid_: Run、前端任务、LangSmith session
 
 ### Identity and ingress
@@ -160,7 +160,7 @@ _Avoid_: Workspace、organization（除非产品未来明确引入独立概念�
 - 一个 **Run** 产生多个 **Event**，最多有一个当前 **Checkpoint**，并投影到一个 assistant Message。
 - 一个 **Document** 有多个 **Document Version**，但任一时刻最多发布一个当前版本。
 - 一个 **Model Assignment** 恰好把一个模型角色映射到零或一个 **Model Profile**；新 Run 创建时把所有当前 Assignment 冻结成同一个 **Model Snapshot**。
-- 一个 **RAG Evaluation Job** 只消费一个 **RAG Evaluation Dataset** fingerprint，并冻结自己的 baseline、GatePolicy 与 Model Snapshot；每个 Case 有独立持久状态。
+- 一个 **RAG Evaluation Job** 只消费一个 **RAG Evaluation Dataset** fingerprint，并冻结自己的 baseline、GatePolicy、Model Snapshot 和检索范围；每个 Case 有独立持久状态，重试不重新解析当前 Document Version。
 - 一个 **Skill** 允许零到多个 **Tool**；每次 Tool 调用都必须先产生 **Guardrail Decision**。
 - **Sandbox Execution** 是 Tool 的一种隔离实现，不替代 Guardrail Decision。
 - **Evidence** 来自已发布 Document Version 或受控 Web Research，并由 RAG Trace 记录其公开身份。

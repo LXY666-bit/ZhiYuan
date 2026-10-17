@@ -87,6 +87,22 @@ class RunServiceTests(unittest.TestCase):
         )
         self.assertEqual(completed.id, repeated.id)
 
+    def test_finalization_preserves_previously_recorded_usage(self):
+        reservation = self.create()
+        claimed = self.service.claim_run(run_id=reservation.run.id, worker_id="worker")
+        with self.Session.begin() as db:
+            run = db.get(Run, claimed.id)
+            run.input_tokens = 120
+            run.output_tokens = 45
+            run.cost = "0.02"
+        self.service.complete_run(
+            run_id=claimed.id, content="answer", fencing_token=claimed.fencing_token
+        )
+        with self.Session() as db:
+            run = db.get(Run, claimed.id)
+            self.assertEqual((run.input_tokens, run.output_tokens), (120, 45))
+            self.assertEqual(float(run.cost), 0.02)
+
     def test_completed_run_keeps_append_version_valid_for_the_next_turn(self):
         first = self.create()
         claimed = self.service.claim_run(run_id=first.run.id, worker_id="worker-1")

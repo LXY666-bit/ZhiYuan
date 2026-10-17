@@ -17,7 +17,7 @@ from backend.db.models import Base, User
 from backend.evaluation.repository import RagEvaluationRepository
 from backend.evaluation.service import RagEvaluationService
 from backend.infra.auth import get_current_user
-from tests.support import static_model_control
+from tests.support import static_retrieval_snapshot, static_model_control
 
 
 def _dataset_payload():
@@ -53,7 +53,11 @@ def _app(role: str = "admin"):
     service = RagEvaluationService(
         RagEvaluationRepository(factory),
         model_control=static_model_control,
-        settings=SimpleNamespace(worker=SimpleNamespace(evaluation_max_attempts=3)),
+        retrieval_resolver=static_retrieval_snapshot,
+        settings=SimpleNamespace(
+            app=SimpleNamespace(default_tenant_id="default"),
+            worker=SimpleNamespace(evaluation_max_attempts=3),
+        ),
     )
     app = FastAPI()
     install_exception_handlers(app)

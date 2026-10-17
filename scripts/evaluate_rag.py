@@ -159,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
             gates,
             baseline=baseline,
             metadata=metadata,
+            allow_source_mismatch=args.allow_source_mismatch,
         )
         _write_text(args.report, render_rag_eval_json(report))
         if args.markdown:
@@ -236,22 +237,9 @@ def _require_comparable_source(
     metadata: dict[str, Any],
     baseline: RagEvalReport,
 ) -> None:
-    mismatches = [
-        key
-        for key in (
-            "corpus_id",
-            "corpus_fingerprint",
-            "profile_id",
-            "index_id",
-            "profile_fingerprint",
-            "rag_source_fingerprint",
-        )
-        if baseline.metadata.get(key) != metadata.get(key)
-    ]
-    if mismatches:
-        raise DatasetFingerprintMismatch(
-            "baseline source identity differs: " + ", ".join(mismatches)
-        )
+    from backend.evaluation.rag import require_comparable_source
+
+    require_comparable_source(metadata, baseline.metadata)
 
 
 def _validate_release_policy(policy: RagEvalGatePolicy) -> None:

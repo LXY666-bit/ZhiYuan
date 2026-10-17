@@ -118,6 +118,7 @@ describe('ResearchWorkbench', () => {
     await nextTick();
     expect(root.querySelector('.run-phase')?.textContent).toContain('部分内容降级');
     expect(root.querySelector('.run-phase')?.textContent).toContain('交付完成不代表全部事实已验证');
+    expect(root.textContent).not.toContain('Run 已创建，正在准备研究步骤');
   });
 
   it('blocks approval while the displayed plan has unsaved edits', async () => {

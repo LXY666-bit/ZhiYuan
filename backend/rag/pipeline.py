@@ -109,6 +109,8 @@ EVIDENCE_GRADE_PROMPT = (
     "  answer: relevance=strong 且 answerability=sufficient。\n"
     "  rewrite: 有相关信号，但像是问法、别名或泛化程度导致证据不足。\n"
     "  clarify: 缺少关键条件，需要用户补充。\n"
+    "  只有用户能补齐的明确条件才算 missing_slot；资料没有记载某功能不算用户问题有歧义。"
+    "用户要求无证据就说明、或不再补充时，不得再次请求澄清。\n"
     "  scope_select: 多个候选方向都相关，需要用户选择。\n"
     "  no_knowledge: 无召回或主题不相关。\n"
     "- 如果 route 是 clarify 或 scope_select，请给 hitl_prompt；如果能列出选项，请给 hitl_options。"
@@ -503,6 +505,8 @@ def _retrieval_status_for_route(route: str, grade: EvidenceGrade) -> str:
         return "needs_clarification"
     if route == "scope_select":
         return "needs_scope_selection"
+    if route == "insufficient_evidence":
+        return "insufficient_evidence"
     return "no_knowledge"
 
 
@@ -563,6 +567,32 @@ def _resolve_route(grade: EvidenceGrade, state: RAGState) -> str:
     if not docs or grade.relevance == "none":
         return "no_knowledge"
 
+    # Healthy but incomplete retrieval must terminate separately from no knowledge.
+    # Two useful clarification rounds remain possible; explicit refusal ends sooner.
+    answers = state.get("hitl_answers") or []
+    question = str(
+        answers[-1]
+        if answers
+        else state.get("original_question") or state.get("question") or ""
+    )
+    clarification_closed = len(answers) >= 2 or bool(
+        re.search(
+            r"(?:不要|无需|不需要|不用|别)(?:再|继续)?(?:追问|提问|澄清|补充)|"
+            r"(?:没有|无)(?:新的?|更多)?资料|"
+            r"(?:如果|若).{0,8}(?:没有|无|不足).{0,8}(?:证据|资料|信息).{0,12}(?:直接|说明)|"
+            r"do not ask|don't ask|no further questions",
+            question,
+            re.I,
+        )
+    )
+    if clarification_closed and not (
+        grade.relevance == "strong"
+        and grade.answerability == "sufficient"
+        and grade.ambiguity == "none"
+        and not grade.missing_slots
+    ):
+        return "insufficient_evidence"
+
     selectable_options = tuple(
         dict.fromkeys(option.strip() for option in grade.hitl_options if option.strip())
     )
@@ -590,25 +620,23 @@ def _resolve_route(grade: EvidenceGrade, state: RAGState) -> str:
     if is_sub_agent:
         if grade.answerability in ("partial", "sufficient"):
             return "answer"
-        return "no_knowledge"
+        return "insufficient_evidence"
 
     if route == "rewrite" and rewrite_count < 1:
         return "rewrite"
 
     if route == "rewrite" and rewrite_count >= 1:
-        if grade.answerability == "partial":
-            return "clarify"
-        return "no_knowledge"
+        return "insufficient_evidence"
 
     if grade.answerability == "partial":
         if rewrite_count < 1:
             return "rewrite"
-        return "clarify"
+        return "insufficient_evidence"
 
     if answer_is_supported:
         return "answer"
 
-    return "no_knowledge"
+    return "insufficient_evidence"
 
 
 def _grade_update(grade: EvidenceGrade, route: str) -> dict:
@@ -709,7 +737,7 @@ def grade_documents_node(state: RAGState) -> RAGState:
         "rag_trace": rag_trace,
     }
 
-    if route in ("no_knowledge", "clarify", "scope_select"):
+    if route in ("no_knowledge", "clarify", "scope_select", "insufficient_evidence"):
         if route in ("clarify", "scope_select") and docs:
             rag_trace["retrieved_chunks"] = []
         update.update({"docs": [], "context": ""})
@@ -1034,15 +1062,19 @@ def _fanout_sub_questions(state: RAGState):
     return [
         Send(
             "rag_sub_agent",
-            _initial_state(
-                sq,
-                tenant_id=state.get("tenant_id"),
-                runtime_context_id=state.get("runtime_context_id"),
-                model_snapshot=state.get("model_snapshot"),
-                is_sub_agent=True,
-                rag_step_group=f"子问题 {i}",
-                rag_step_group_label=sq,
-            ),
+            {
+                **_initial_state(
+                    sq,
+                    tenant_id=state.get("tenant_id"),
+                    runtime_context_id=state.get("runtime_context_id"),
+                    model_snapshot=state.get("model_snapshot"),
+                    is_sub_agent=True,
+                    rag_step_group=f"子问题 {i}",
+                    rag_step_group_label=sq,
+                ),
+                "original_question": state.get("original_question")
+                or state["question"],
+            },
         )
         for i, sq in enumerate(sub_qs, 1)
     ]
@@ -1147,7 +1179,13 @@ def synthesis(state: RAGState) -> RAGState:
             for option in trace.get("hitl_options") or []:
                 if option not in hitl_options:
                     hitl_options.append(option)
-    elif not has_docs and provider_failures:
+    elif not has_docs and (
+        provider_failures
+        or any(
+            result.get("retrieval_status") == "insufficient_evidence"
+            for result in sub_results
+        )
+    ):
         retrieval_status = "insufficient_evidence"
 
     route = (
@@ -1155,7 +1193,11 @@ def synthesis(state: RAGState) -> RAGState:
         if has_docs
         else (
             hitl_route
-            or ("insufficient_evidence" if provider_failures else "no_knowledge")
+            or (
+                "insufficient_evidence"
+                if retrieval_status == "insufficient_evidence"
+                else "no_knowledge"
+            )
         )
     )
 

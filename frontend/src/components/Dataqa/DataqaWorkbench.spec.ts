@@ -8,6 +8,7 @@ const dataQaStore = vi.hoisted(() => ({ current: null as unknown }));
 
 vi.mock('@/stores/dataqa', () => ({
   useDataQaStore: () => dataQaStore.current,
+  isDataQaQueryActive: (item: DataQaQuery) => ['pending', 'running'].includes(item.status),
 }));
 
 import DataqaWorkbench from './DataqaWorkbench.vue';
@@ -61,6 +62,23 @@ describe('DataqaWorkbench', () => {
   let root: HTMLDivElement | null = null;
   const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, 'execCommand');
   const secureContextDescriptor = Object.getOwnPropertyDescriptor(window, 'isSecureContext');
+
+  it('renders authoritative cancellation as cancelled without a failure alert', async () => {
+    dataQaStore.current = storeFor({
+      ...query(),
+      status: 'failed',
+      error_code: 'RUN_CANCELLED',
+      result: null,
+    });
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    app = createApp(DataqaWorkbench);
+    app.mount(root);
+    await nextTick();
+    expect(root.querySelector('.status-chip')?.textContent).toBe('已取消');
+    expect(root.querySelector('[role="alert"]')).toBeNull();
+    expect(root.textContent).not.toContain('RUN_CANCELLED');
+  });
 
   afterEach(() => {
     app?.unmount();

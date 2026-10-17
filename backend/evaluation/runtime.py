@@ -14,7 +14,7 @@ from backend.agent.models import (
     structured_output,
 )
 from backend.agent.runtime import extract_message_content
-from backend.core.settings import get_settings
+from backend.documents.retrieval import RetrievalSnapshot
 from backend.evaluation.rag import (
     RagEvalCase,
     RagEvalObservation,
@@ -79,6 +79,7 @@ class RagEvaluationRuntime:
         job_id: str,
         case: RagEvalCase,
         model_snapshot: ModelCatalogSnapshot,
+        retrieval_snapshot: RetrievalSnapshot,
         timeout_seconds: float,
         cancellation: Callable[[], bool],
     ) -> RagEvaluationCaseExecution:
@@ -88,8 +89,9 @@ class RagEvaluationRuntime:
             user_id="rag_evaluation_worker",
             thread_id=f"{job_id}:{case.id}",
             model_snapshot=model_snapshot,
-            tenant_id=get_settings().app.default_tenant_id,
+            tenant_id=retrieval_snapshot.tenant_id,
         )
+        context.get_or_resolve_rag_retrieval_snapshot(lambda: retrieval_snapshot)
         context.configure_provider_runtime(
             deadline_at=deadline,
             cancellation_probe=cancellation,

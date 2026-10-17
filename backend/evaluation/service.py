@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from backend.core.settings import AppSettings, get_settings
 from backend.evaluation.contracts import (
     RagEvaluationCaseRecord,
+    RagEvaluationExecutionManifest,
     RagEvaluationDatasetRecord,
     RagEvaluationJobRecord,
     RagEvaluationJobStatus,
@@ -12,6 +15,10 @@ from backend.evaluation.repository import (
     RagEvaluationRepository,
     rag_evaluation_repository,
 )
+from backend.documents.retrieval import RetrievalSnapshot
+from backend.env import PROJECT_ROOT
+from backend.evaluation.rag_adapters import rag_source_fingerprint
+from backend.rag.utils import resolve_retrieval_snapshot
 from backend.model_control import ModelControlService, ModelRole, model_control_service
 
 
@@ -32,7 +39,11 @@ class RagEvaluationService:
         *,
         model_control: ModelControlService = model_control_service,
         settings: AppSettings | None = None,
+        retrieval_resolver: Callable[
+            ..., RetrievalSnapshot
+        ] = resolve_retrieval_snapshot,
     ) -> None:
+        self.retrieval_resolver = retrieval_resolver
         self.repository = repository
         self.model_control = model_control
         self.settings = settings or get_settings()
@@ -69,6 +80,12 @@ class RagEvaluationService:
             dataset_id=dataset_id,
             gate_policy=gate_policy or DEFAULT_RAG_EVALUATION_GATES,
             model_snapshot=model_snapshot,
+            execution_manifest=RagEvaluationExecutionManifest(
+                retrieval_snapshot=self.retrieval_resolver(
+                    tenant_id=self.settings.app.default_tenant_id
+                ),
+                rag_source_fingerprint=rag_source_fingerprint(PROJECT_ROOT),
+            ),
             baseline_job_id=baseline_job_id,
             max_attempts=self.settings.worker.evaluation_max_attempts,
         )

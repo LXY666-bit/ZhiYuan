@@ -103,9 +103,9 @@ class RunService:
         run_id: str,
         content: str,
         fencing_token: int | None = None,
-        input_tokens: int = 0,
-        output_tokens: int = 0,
-        cost: Decimal | str | float = Decimal("0"),
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+        cost: Decimal | str | float | None = None,
         rag_trace: dict | None = None,
     ) -> RunRecord:
         return self.repository.finalize(

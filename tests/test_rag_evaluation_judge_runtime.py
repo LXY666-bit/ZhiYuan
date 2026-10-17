@@ -21,7 +21,7 @@ from backend.providers import (
     ProviderExecutor,
     ProviderOperation,
 )
-from tests.support import TEST_MODEL_SNAPSHOT
+from tests.support import TEST_MODEL_SNAPSHOT, TEST_RETRIEVAL_SNAPSHOT
 
 
 class _AnswerModel:
@@ -112,6 +112,7 @@ def test_runtime_generates_answer_and_structured_judge_without_persisting_eviden
             job_id="rag_eval_1",
             case=case,
             model_snapshot=TEST_MODEL_SNAPSHOT,
+            retrieval_snapshot=TEST_RETRIEVAL_SNAPSHOT,
             timeout_seconds=30,
             cancellation=lambda: False,
         )
@@ -147,6 +148,7 @@ def test_retrieval_provider_failure_short_circuits_answer_and_judge():
             job_id="rag_eval_1",
             case=case,
             model_snapshot=TEST_MODEL_SNAPSHOT,
+            retrieval_snapshot=TEST_RETRIEVAL_SNAPSHOT,
             timeout_seconds=30,
             cancellation=lambda: False,
         )
@@ -191,6 +193,7 @@ def test_partial_retrieval_provider_failure_with_docs_still_short_circuits():
             job_id="rag_eval_1",
             case=case,
             model_snapshot=TEST_MODEL_SNAPSHOT,
+            retrieval_snapshot=TEST_RETRIEVAL_SNAPSHOT,
             timeout_seconds=30,
             cancellation=lambda: False,
         )
@@ -240,6 +243,7 @@ def test_generation_provider_failure_short_circuits_judge():
             job_id="rag_eval_1",
             case=case,
             model_snapshot=TEST_MODEL_SNAPSHOT,
+            retrieval_snapshot=TEST_RETRIEVAL_SNAPSHOT,
             timeout_seconds=30,
             cancellation=lambda: False,
         )
@@ -290,6 +294,7 @@ def test_judge_provider_failure_preserves_generated_answer_and_records_stage():
             job_id="rag_eval_1",
             case=case,
             model_snapshot=TEST_MODEL_SNAPSHOT,
+            retrieval_snapshot=TEST_RETRIEVAL_SNAPSHOT,
             timeout_seconds=30,
             cancellation=lambda: False,
         )
@@ -364,6 +369,7 @@ def test_hitl_answer_is_included_in_generation_and_judge_question():
             job_id="rag_eval_1",
             case=case,
             model_snapshot=TEST_MODEL_SNAPSHOT,
+            retrieval_snapshot=TEST_RETRIEVAL_SNAPSHOT,
             timeout_seconds=30,
             cancellation=lambda: False,
         )

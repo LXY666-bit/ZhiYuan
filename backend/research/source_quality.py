@@ -7,7 +7,11 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from urllib.parse import urlparse
 
-from backend.research.query_policy import objective_match, objective_versions
+from backend.research.query_policy import (
+    objective_match,
+    objective_versions,
+    official_source_domains,
+)
 
 
 _PRIMARY_SUFFIXES = (".gov", ".gov.cn", ".edu", ".edu.cn", ".ac.cn")
@@ -75,6 +79,16 @@ def enrich_web_evidence(item: dict, *, objective: str) -> dict:
         urlparse(uri).path,
     )
     source_version = version[1] if version else None
+    if not source_version and host == "docs.postgresql.tw":
+        path_version = re.match(r"/(\d+(?:\.\d+){0,2})/", urlparse(uri).path)
+        source_version = path_version[1] if path_version else None
+    if not source_version and "postgresql" in str(item.get("title") or "").casefold():
+        title_version = re.search(
+            r"Documentation:\s*(\d+(?:\.\d+){0,2})(?=\s|:|$)",
+            str(item.get("title") or ""),
+            re.I,
+        )
+        source_version = title_version[1] if title_version else None
     if not source_version:
         header_version = re.search(
             r"(?:^|#\s*)(Redis|RabbitMQ)\s+(\d+(?:\.\d+){0,2})(?:\s|$)",
@@ -150,6 +164,8 @@ def rank_web_evidence(
 ) -> list[dict]:
     enriched = [enrich_web_evidence(item, objective=objective) for item in items]
     enriched = [item for item in enriched if item.get("objective_match")]
+    if official_source_domains(objective):
+        enriched = [item for item in enriched if item.get("primary_source")]
     # Preserve different snapshots, including conflicts, while reusing identical ones.
     enriched = list(
         {

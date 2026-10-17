@@ -43,3 +43,11 @@ PR-15 之前还没有稳定的 DocumentVersion 与 IndexManifest 身份；当前
 调用者跨越一个小的评分 Interface，即获得数据校验、指标、切片、基线和门禁的 Leverage。评分知识集中在一个 Module，提高 Locality；实时 Provider 与离线 CI 通过两个 Adapter 共享同一 seam。
 
 代价是初始 smoke baseline 只证明评测系统可复现，不代表生产质量。答案 Judge 指标依赖 Evaluator Model Profile 的稳定性，必须结合人工抽检校准；结构化引用完成后再启用 citation precision/recall。最终完成审计前，应把真实人工标注集扩展到至少 200 条。
+
+
+### 跨入口可比性与跨平台重建
+
+纯评分入口与 CLI 共用身份校验，比较 provenance、corpus/profile/index、模型目录、检索快照、
+Judge schema 和源码 fingerprint。显式 `allow_source_mismatch` 只用于调查，报告保留 override 标记。
+源码 fingerprint v2 规范化 CRLF/LF，不因 checkout 平台变化而漂移；受控 HTML corpus 固定 LF，
+语料仍按真实字节计算身份。baseline 必须通过评分命令重建，不修改 Observation 或 Gate 阈值。

@@ -736,6 +736,7 @@ class RunAgentExecutor:
                 worker_id=self.worker_id,
                 fencing_token=snapshot.run.fencing_token,
                 runner=self.checkpoint_runner,
+                original_question=snapshot.user_text,
             )
 
         def pin_skill(activated: ActivatedSkill) -> None:

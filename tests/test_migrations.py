@@ -66,6 +66,7 @@ class MigrationTests(unittest.TestCase):
                     "total_cases",
                     "model_catalog_hash",
                     "model_snapshot_json",
+                    "execution_manifest_json",
                     "report_json",
                 }.issubset(
                     {

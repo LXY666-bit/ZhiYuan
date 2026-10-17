@@ -674,7 +674,7 @@ class RagShortCircuitTests(unittest.TestCase):
         self.assertIn("evidence-0", captured_prompts[0])
         self.assertNotIn("evidence-7", captured_prompts[0])
 
-    def test_weak_evidence_rewrites_once_then_clarifies(self):
+    def test_weak_evidence_rewrites_once_then_finishes_insufficient(self):
         calls = {"retrieve": [], "step_back": 0}
 
         def retrieve(query, top_k=5):
@@ -722,7 +722,7 @@ class RagShortCircuitTests(unittest.TestCase):
             ["weak question", "rewritten weak question"], calls["retrieve"]
         )
         self.assertEqual(1, calls["step_back"])
-        self.assertEqual("needs_clarification", result.get("retrieval_status"))
+        self.assertEqual("insufficient_evidence", result.get("retrieval_status"))
         self.assertEqual([], result.get("docs"))
 
     def test_hyde_rewrite_runs_only_selected_retrieval(self):

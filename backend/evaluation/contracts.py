@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.documents.retrieval import RetrievalSnapshot
+
 from backend.evaluation.rag import (
     RagEvalDataset,
     RagEvalGatePolicy,
@@ -53,6 +55,11 @@ class RagEvaluationDatasetRecord(EvaluationContract):
         return value.astimezone(UTC)
 
 
+class RagEvaluationExecutionManifest(EvaluationContract):
+    retrieval_snapshot: RetrievalSnapshot
+    rag_source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class RagEvaluationJobRecord(EvaluationContract):
     id: str
     dataset_id: str
@@ -65,6 +72,7 @@ class RagEvaluationJobRecord(EvaluationContract):
     gate_policy: RagEvalGatePolicy
     model_catalog_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     model_snapshot: ModelCatalogSnapshot
+    execution_manifest: RagEvaluationExecutionManifest | None = None
     owner_worker_id: str | None = None
     lease_expires_at: datetime | None = None
     fencing_token: int = Field(ge=0)

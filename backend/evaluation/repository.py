@@ -25,6 +25,7 @@ from backend.db.models import (
 )
 from backend.evaluation.contracts import (
     ClaimedRagEvaluationJob,
+    RagEvaluationExecutionManifest,
     RagEvaluationCaseRecord,
     RagEvaluationCaseStatus,
     RagEvaluationDatasetRecord,
@@ -110,6 +111,13 @@ class RagEvaluationRepository:
             model_snapshot = ModelCatalogSnapshot.model_validate(
                 row.model_snapshot_json
             )
+            manifest = (
+                RagEvaluationExecutionManifest.model_validate(
+                    row.execution_manifest_json
+                )
+                if row.execution_manifest_json is not None
+                else None
+            )
             report = (
                 RagEvalReport.model_validate(row.report_json)
                 if row.report_json is not None
@@ -144,6 +152,7 @@ class RagEvaluationRepository:
             gate_policy=policy,
             model_catalog_hash=row.model_catalog_hash,
             model_snapshot=model_snapshot,
+            execution_manifest=manifest,
             owner_worker_id=row.owner_worker_id,
             lease_expires_at=row.lease_expires_at,
             fencing_token=row.fencing_token,
@@ -284,6 +293,7 @@ class RagEvaluationRepository:
         dataset_id: str,
         gate_policy: RagEvalGatePolicy,
         model_snapshot: ModelCatalogSnapshot,
+        execution_manifest: RagEvaluationExecutionManifest,
         baseline_job_id: str | None = None,
         max_attempts: int = 3,
     ) -> RagEvaluationJobRecord:
@@ -329,6 +339,18 @@ class RagEvaluationRepository:
                             category="evaluation",
                             stage="baseline",
                         )
+                    if (
+                        baseline.model_catalog_hash != model_snapshot.catalog_hash
+                        or baseline.execution_manifest_json
+                        != execution_manifest.model_dump(mode="json")
+                    ):
+                        raise AppError(
+                            ErrorCode.CONFLICT,
+                            "Baseline 执行快照不同，不能作为回归门禁",
+                            status_code=409,
+                            category="evaluation",
+                            stage="baseline",
+                        )
                 validated_dataset = RagEvalDataset.model_validate(dataset.payload_json)
                 now = utcnow()
                 job = RagEvaluationJobRow(
@@ -341,6 +363,7 @@ class RagEvaluationRepository:
                     gate_policy_json=gate_policy.model_dump(mode="json"),
                     model_catalog_hash=model_snapshot.catalog_hash,
                     model_snapshot_json=model_snapshot.model_dump(mode="json"),
+                    execution_manifest_json=execution_manifest.model_dump(mode="json"),
                     fencing_token=0,
                     attempts=0,
                     max_attempts=max(1, max_attempts),
